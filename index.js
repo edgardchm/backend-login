@@ -1,3 +1,4 @@
+import cors from 'cors';
 const express = require('express');
 const bcrypt = require('bcrypt');
 const db = require('./db');
@@ -5,6 +6,9 @@ require('dotenv').config();
 
 const app = express();
 app.use(express.json());
+app.use(cors({
+    origin: ['http://localhost:8100']
+  }));
 
 app.post('/login', async (req, res) => {
     const { email, password } = req.body;
