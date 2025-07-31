@@ -36,7 +36,7 @@ app.post('/login', async (req, res) => {
         return res.status(401).json({ error: 'Email o contraseña incorrectos' });
       }
   
-      res.json({ id: user.id, email: user.email, rol: user.rol });
+      res.json({ id: user.id, email: user.email, rol: user.rol, nombre: user.nombre });
     } catch (err) {
       console.error('Error interno:', err);
       res.status(500).json({ error: 'Error interno del servidor' });
