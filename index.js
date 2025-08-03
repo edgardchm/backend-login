@@ -183,6 +183,26 @@ app.delete('/repuestos-marca/:id', async (req, res) => {
   }
 });
 
+// Obtener marcas disponibles para un tipo de repuesto específico
+app.get('/marcas-por-tipo/:tipoId', async (req, res) => {
+  const { tipoId } = req.params;
+  try {
+    const result = await db.query(
+      `SELECT DISTINCT m.id, m.marca
+       FROM marcas m
+       JOIN repuestos_marca r ON r.marca_id = m.id
+       WHERE r.tipo_repuesto_id = $1
+       ORDER BY m.marca`,
+      [tipoId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al obtener marcas por tipo de repuesto' });
+  }
+});
+
+
   
 
 const PORT = process.env.PORT || 3000;
