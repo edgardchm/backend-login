@@ -42,6 +42,44 @@ app.post('/login', async (req, res) => {
       res.status(500).json({ error: 'Error interno del servidor' });
     }
   });
+
+  // Obtener todos los tipos de repuestos
+app.get('/repuestos', async (req, res) => {
+  try {
+    const result = await db.query('SELECT * FROM tipos_repuestos ORDER BY nombre');
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al obtener los tipos de repuestos' });
+  }
+});
+
+// Agregar un tipo de repuesto
+app.post('/repuestos', async (req, res) => {
+  const { nombre } = req.body;
+  try {
+    const result = await db.query(
+      'INSERT INTO tipos_repuestos (nombre) VALUES ($1) RETURNING *',
+      [nombre]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al agregar el repuesto (puede que ya exista)' });
+  }
+});
+
+// Eliminar un tipo de repuesto por ID
+app.delete('/repuestos/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    await db.query('DELETE FROM tipos_repuestos WHERE id = $1', [id]);
+    res.json({ message: 'Repuesto eliminado' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al eliminar el repuesto' });
+  }
+});
   
 
 const PORT = process.env.PORT || 3000;
