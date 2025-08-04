@@ -7,7 +7,16 @@ require('dotenv').config();
 const app = express();
 app.use(express.json());
 app.use(cors({
-    origin: ['http://localhost:8100', 'http://localhost:3000', 'http://localhost:3001', 'http://localhost:8080', 'http://localhost:4200', 'http://localhost']
+    origin: [
+        'http://localhost:8100', 
+        'http://localhost:3000', 
+        'http://localhost:3001', 
+        'http://localhost:8080', 
+        'http://localhost:4200', 
+        'http://localhost',
+        'https://backend-login-production-8683.up.railway.app',
+        'http://backend-login-production-8683.up.railway.app'
+    ]
 }));
 
 // Login
