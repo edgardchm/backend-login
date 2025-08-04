@@ -61,17 +61,27 @@ app.get('/repuestos', async (req, res) => {
 // Agregar un tipo de repuesto
 app.post('/repuestos', async (req, res) => {
   const { nombre } = req.body;
+
   try {
-    const result = await db.query(
-      'INSERT INTO tipos_repuestos (nombre) VALUES ($1) RETURNING *',
+    const tipoResult = await db.query(
+      'INSERT INTO tipos_repuestos (nombre) VALUES ($1) RETURNING id',
       [nombre]
     );
-    res.status(201).json(result.rows[0]);
+
+    const tipoRepuestoId = tipoResult.rows[0].id;
+
+    await db.query(
+      'INSERT INTO marca_tipo_repuesto (marca_id, tipo_repuesto_id) SELECT id, $1 FROM marcas ON CONFLICT DO NOTHING',
+      [tipoRepuestoId]
+    );
+
+    res.json({ message: 'Tipo de repuesto creado y vinculado a todas las marcas', tipoRepuestoId });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Error al agregar el repuesto (puede que ya exista)' });
+    res.status(500).json({ error: 'Error al crear el tipo de repuesto' });
   }
 });
+
 
 // Eliminar un tipo de repuesto por ID
 app.delete('/repuestos/:id', async (req, res) => {
