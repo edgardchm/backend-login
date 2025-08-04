@@ -8,42 +8,43 @@ const app = express();
 app.use(express.json());
 app.use(cors({
     origin: ['http://localhost:8100']
-  }));
+}));
 
+// Login
 app.post('/login', async (req, res) => {
-    const { email, password } = req.body;
-  
-    try {
-      const result = await db.query(
-        'SELECT * FROM usuarios WHERE email = $1',
-        [email]
-      );
-  
-      if (result.rows.length === 0) {
-        console.log('Usuario no encontrado:', email);
-        return res.status(401).json({ error: 'Email o contraseña incorrectos' });
-      }
-  
-      const user = result.rows[0];
-      console.log('Usuario encontrado:', user.email);
-      console.log('Password recibido:', password);
-      console.log('Hash en DB:', user.password_hash);
-  
-      const match = await bcrypt.compare(password, user.password_hash);
-      console.log('Resultado comparación bcrypt:', match);
-  
-      if (!match) {
-        return res.status(401).json({ error: 'Email o contraseña incorrectos' });
-      }
-  
-      res.json({ id: user.id, email: user.email, rol: user.rol, nombre: user.nombre });
-    } catch (err) {
-      console.error('Error interno:', err);
-      res.status(500).json({ error: 'Error interno del servidor' });
-    }
-  });
+  const { email, password } = req.body;
 
-  // Obtener todos los tipos de repuestos
+  try {
+    const result = await db.query(
+      'SELECT * FROM usuarios WHERE email = $1',
+      [email]
+    );
+
+    if (result.rows.length === 0) {
+      console.log('Usuario no encontrado:', email);
+      return res.status(401).json({ error: 'Email o contraseña incorrectos' });
+    }
+
+    const user = result.rows[0];
+    console.log('Usuario encontrado:', user.email);
+    console.log('Password recibido:', password);
+    console.log('Hash en DB:', user.password_hash);
+
+    const match = await bcrypt.compare(password, user.password_hash);
+    console.log('Resultado comparación bcrypt:', match);
+
+    if (!match) {
+      return res.status(401).json({ error: 'Email o contraseña incorrectos' });
+    }
+
+    res.json({ id: user.id, email: user.email, rol: user.rol, nombre: user.nombre });
+  } catch (err) {
+    console.error('Error interno:', err);
+    res.status(500).json({ error: 'Error interno del servidor' });
+  }
+});
+
+// Obtener todos los tipos de repuestos
 app.get('/repuestos', async (req, res) => {
   try {
     const result = await db.query('SELECT * FROM tipos_repuestos ORDER BY nombre');
@@ -135,7 +136,6 @@ app.delete('/marcas/:id', async (req, res) => {
   }
 });
 
-
 // Obtener todos los repuestos (con marca y tipo)
 app.get('/repuestos-marca', async (req, res) => {
   try {
@@ -203,13 +203,13 @@ app.get('/marcas-por-tipo/:tipoRepuestoId', async (req, res) => {
   }
 });
 
-
+// Obtener repuestos por tipo y marca (tabla corregida)
 app.get('/repuestos/:tipoRepuestoId/:marcaId', async (req, res) => {
   const { tipoRepuestoId, marcaId } = req.params;
   try {
     const result = await db.query(`
       SELECT id, nombre, precio_mayor, precio_cliente
-      FROM repuestos_marca
+      FROM repuestos
       WHERE tipo_repuesto_id = $1 AND marca_id = $2
       ORDER BY nombre
     `, [tipoRepuestoId, marcaId]);
@@ -219,9 +219,6 @@ app.get('/repuestos/:tipoRepuestoId/:marcaId', async (req, res) => {
     res.status(500).json({ error: 'Error al obtener los repuestos' });
   }
 });
-
-
-  
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
