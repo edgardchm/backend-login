@@ -156,23 +156,43 @@ app.get('/repuestos-marca', async (req, res) => {
   }
 });
 
+const generarSKU = (nombreTipo, nombreMarca) => {
+  const tipo = nombreTipo.slice(0, 3).toUpperCase();
+  const marca = nombreMarca.slice(0, 3).toUpperCase();
+  const random = Math.floor(1000 + Math.random() * 9000); // 4 dígitos aleatorios
+  return `${tipo}-${marca}-${random}`;
+};
+
 // Crear nuevo repuesto
 app.post('/repuestos-marca', async (req, res) => {
-  const { nombre, tipo_repuesto_id, marca_id, precio_mayor, precio_cliente } = req.body;
+  const { nombre, descripcion, precio, precio_mayor, precio_cliente, tipo_repuesto_id, marca_id } = req.body;
+
   try {
+    // Obtener nombre de tipo y marca para el SKU
+    const tipoRes = await db.query('SELECT nombre FROM tipos_repuestos WHERE id = $1', [tipo_repuesto_id]);
+    const marcaRes = await db.query('SELECT marca FROM marcas WHERE id = $1', [marca_id]);
+
+    if (tipoRes.rows.length === 0 || marcaRes.rows.length === 0) {
+      return res.status(400).json({ error: 'Tipo o Marca no encontrada' });
+    }
+
+    const sku = generarSKU(tipoRes.rows[0].nombre, marcaRes.rows[0].marca);
+
     const result = await db.query(
       `INSERT INTO repuestos 
-        (nombre, tipo_repuesto_id, marca_id, precio_mayor, precio_cliente)
-       VALUES ($1, $2, $3, $4, $5)
+        (nombre, descripcion, precio, precio_mayor, precio_cliente, tipo_repuesto_id, marca_id, sku)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
-      [nombre, tipo_repuesto_id, marca_id, precio_mayor, precio_cliente]
+      [nombre, descripcion, precio, precio_mayor, precio_cliente, tipo_repuesto_id, marca_id, sku]
     );
+
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    console.error(err);
+    console.error('Error al crear el repuesto:', err);
     res.status(500).json({ error: 'Error al crear el repuesto' });
   }
 });
+
 
 // Eliminar repuesto por ID
 app.delete('/repuestos-marca/:id', async (req, res) => {
