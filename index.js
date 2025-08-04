@@ -241,11 +241,11 @@ app.get('/repuestos/:tipoRepuestoId/:marcaId', async (req, res) => {
   const { tipoRepuestoId, marcaId } = req.params;
   try {
     const result = await db.query(`
-      SELECT id, nombre, precio_mayor, precio_cliente
+      SELECT id, nombre, precio_mayor, precio_cliente, stock
       FROM repuestos
       WHERE tipo_repuesto_id = $1 AND marca_id = $2
       ORDER BY nombre
-    `, [tipoRepuestoId, marcaId]);
+    `, [tipoRepuestoId, marcaId]);    
     res.json(result.rows);
   } catch (err) {
     console.error(err);
