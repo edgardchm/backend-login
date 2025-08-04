@@ -184,23 +184,25 @@ app.delete('/repuestos-marca/:id', async (req, res) => {
 });
 
 // Obtener marcas disponibles para un tipo de repuesto específico
-app.get('/marcas-por-tipo/:tipoId', async (req, res) => {
-  const { tipoId } = req.params;
+app.get('/marcas-por-tipo/:tipoRepuestoId', async (req, res) => {
+  const { tipoRepuestoId } = req.params;
+  console.log('tipoRepuestoId recibido:', tipoRepuestoId);
   try {
-    const result = await db.query(
-      `SELECT DISTINCT m.id, m.marca
-       FROM marcas m
-       JOIN repuestos_marca r ON r.marca_id = m.id
-       WHERE r.tipo_repuesto_id = $1
-       ORDER BY m.marca`,
-      [tipoId]
-    );
+    const result = await db.query(`
+      SELECT m.id, m.marca, t.nombre AS tipo_repuesto
+      FROM marcas m
+      JOIN marca_tipo_repuesto mt ON m.id = mt.marca_id
+      JOIN tipos_repuestos t ON mt.tipo_repuesto_id = t.id
+      WHERE t.id = $1
+    `, [tipoRepuestoId]);
+    console.log('Cantidad de resultados:', result.rowCount);
     res.json(result.rows);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Error al obtener marcas por tipo de repuesto' });
+    res.status(500).json({ error: 'Error al obtener las marcas' });
   }
 });
+
 
 app.get('/repuestos/:tipoRepuestoId/:marcaId', async (req, res) => {
   const { tipoRepuestoId, marcaId } = req.params;
