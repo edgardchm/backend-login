@@ -7,7 +7,7 @@ require('dotenv').config();
 const app = express();
 app.use(express.json());
 app.use(cors({
-    origin: ['http://localhost:8100']
+    origin: ['http://localhost:8100', 'http://localhost:3000', 'http://localhost:3001', 'http://localhost:8080', 'http://localhost:4200', 'http://localhost']
 }));
 
 // Login
