@@ -175,7 +175,7 @@ const generarSKU = (nombreTipo, nombreMarca) => {
 
 // Crear nuevo repuesto
 app.post('/repuestos-marca', async (req, res) => {
-  const { nombre, descripcion, precio, precio_mayor, precio_cliente, tipo_repuesto_id, marca_id } = req.body;
+  const { nombre, descripcion, precio, precio_mayor, precio_cliente, tipo_repuesto_id, marca_id, stock } = req.body;
 
   try {
     // Obtener nombre de tipo y marca para el SKU
@@ -190,10 +190,10 @@ app.post('/repuestos-marca', async (req, res) => {
 
     const result = await db.query(
       `INSERT INTO repuestos 
-        (nombre, descripcion, precio, precio_mayor, precio_cliente, tipo_repuesto_id, marca_id, sku)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        (nombre, descripcion, precio, precio_mayor, precio_cliente, tipo_repuesto_id, marca_id, sku, stock)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
-      [nombre, descripcion, precio, precio_mayor, precio_cliente, tipo_repuesto_id, marca_id, sku]
+      [nombre, descripcion, precio, precio_mayor, precio_cliente, tipo_repuesto_id, marca_id, sku, stock]
     );
 
     res.status(201).json(result.rows[0]);
