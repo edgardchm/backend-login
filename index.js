@@ -48,20 +48,27 @@ app.post('/login', async (req, res) => {
     }
 
     const user = result.rows[0];
+
     const match = await bcrypt.compare(password, user.password_hash);
 
     if (!match) {
       return res.status(401).json({ error: 'Email o contraseña incorrectos' });
     }
 
-    const token = jwt.sign({
-      id: user.id,
-      email: user.email,
-      nombre: user.nombre,
-      rol: user.rol
-    }, SECRET_KEY, { expiresIn: '8h' });
+    // Crear JWT
+    const token = jwt.sign(
+      {
+        id: user.id,
+        email: user.email,
+        rol: user.rol,
+        nombre: user.nombre
+      },
+      SECRET_KEY,
+      { expiresIn: '8h' }
+    );
 
-    res.json({
+    // Devolver token y datos del usuario
+    res.status(200).json({
       token,
       user: {
         id: user.id,
