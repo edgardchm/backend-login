@@ -1,19 +1,39 @@
 const cors = require('cors');
 const express = require('express');
 const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 const db = require('./db');
 require('dotenv').config();
 
 const app = express();
 app.use(express.json());
 app.use(cors({
-    origin: true, // Permite todos los orígenes
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  origin: true,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 
-// Login
+const SECRET_KEY = process.env.JWT_SECRET || 'clave_por_defecto';
+
+// Middleware para verificar el token JWT
+function verificarToken(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ error: 'Token no proporcionado' });
+  }
+
+  jwt.verify(token, SECRET_KEY, (err, user) => {
+    if (err) return res.status(403).json({ error: 'Token inválido' });
+
+    req.user = user;
+    next();
+  });
+}
+
+// =================== LOGIN ===================
 app.post('/login', async (req, res) => {
   const { email, password } = req.body;
 
@@ -24,31 +44,42 @@ app.post('/login', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      console.log('Usuario no encontrado:', email);
       return res.status(401).json({ error: 'Email o contraseña incorrectos' });
     }
 
     const user = result.rows[0];
-    console.log('Usuario encontrado:', user.email);
-    console.log('Password recibido:', password);
-    console.log('Hash en DB:', user.password_hash);
-
     const match = await bcrypt.compare(password, user.password_hash);
-    console.log('Resultado comparación bcrypt:', match);
 
     if (!match) {
       return res.status(401).json({ error: 'Email o contraseña incorrectos' });
     }
 
-    res.json({ id: user.id, email: user.email, rol: user.rol, nombre: user.nombre });
+    const token = jwt.sign({
+      id: user.id,
+      email: user.email,
+      nombre: user.nombre,
+      rol: user.rol
+    }, SECRET_KEY, { expiresIn: '8h' });
+
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        nombre: user.nombre,
+        rol: user.rol
+      }
+    });
+
   } catch (err) {
-    console.error('Error interno:', err);
+    console.error('Error en login:', err);
     res.status(500).json({ error: 'Error interno del servidor' });
   }
 });
 
-// Obtener todos los tipos de repuestos
-app.get('/repuestos', async (req, res) => {
+
+// =================== TIPO DE REPUESTOS ===================
+app.get('/repuestos', verificarToken, async (req, res) => {
   try {
     const result = await db.query('SELECT * FROM tipos_repuestos ORDER BY nombre');
     res.json(result.rows);
@@ -58,8 +89,7 @@ app.get('/repuestos', async (req, res) => {
   }
 });
 
-// Agregar un tipo de repuesto
-app.post('/repuestos', async (req, res) => {
+app.post('/repuestos', verificarToken, async (req, res) => {
   const { nombre } = req.body;
 
   try {
@@ -82,9 +112,7 @@ app.post('/repuestos', async (req, res) => {
   }
 });
 
-
-// Eliminar un tipo de repuesto por ID
-app.delete('/repuestos/:id', async (req, res) => {
+app.delete('/repuestos/:id', verificarToken, async (req, res) => {
   const { id } = req.params;
   try {
     await db.query('DELETE FROM tipos_repuestos WHERE id = $1', [id]);
@@ -95,8 +123,9 @@ app.delete('/repuestos/:id', async (req, res) => {
   }
 });
 
-// Obtener todas las marcas
-app.get('/marcas', async (req, res) => {
+
+// =================== MARCAS ===================
+app.get('/marcas', verificarToken, async (req, res) => {
   try {
     const result = await db.query('SELECT * FROM marcas ORDER BY marca');
     res.json(result.rows);
@@ -106,8 +135,7 @@ app.get('/marcas', async (req, res) => {
   }
 });
 
-// Crear nueva marca
-app.post('/marcas', async (req, res) => {
+app.post('/marcas', verificarToken, async (req, res) => {
   const { marca } = req.body;
   try {
     const result = await db.query(
@@ -117,12 +145,11 @@ app.post('/marcas', async (req, res) => {
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Error al agregar la marca (puede que ya exista)' });
+    res.status(500).json({ error: 'Error al agregar la marca' });
   }
 });
 
-// Editar marca por ID
-app.put('/marcas/:id', async (req, res) => {
+app.put('/marcas/:id', verificarToken, async (req, res) => {
   const { id } = req.params;
   const { marca } = req.body;
   try {
@@ -137,8 +164,7 @@ app.put('/marcas/:id', async (req, res) => {
   }
 });
 
-// Eliminar marca por ID
-app.delete('/marcas/:id', async (req, res) => {
+app.delete('/marcas/:id', verificarToken, async (req, res) => {
   const { id } = req.params;
   try {
     await db.query('DELETE FROM marcas WHERE id = $1', [id]);
@@ -149,8 +175,16 @@ app.delete('/marcas/:id', async (req, res) => {
   }
 });
 
-// Obtener todos los repuestos (con marca y tipo)
-app.get('/repuestos-marca', async (req, res) => {
+
+// =================== REPUESTOS ===================
+const generarSKU = (nombreTipo, nombreMarca) => {
+  const tipo = nombreTipo.slice(0, 3).toUpperCase();
+  const marca = nombreMarca.slice(0, 3).toUpperCase();
+  const random = Math.floor(1000 + Math.random() * 9000);
+  return `${tipo}-${marca}-${random}`;
+};
+
+app.get('/repuestos-marca', verificarToken, async (req, res) => {
   try {
     const result = await db.query(`
       SELECT r.*, m.marca, tr.nombre AS tipo
@@ -166,19 +200,10 @@ app.get('/repuestos-marca', async (req, res) => {
   }
 });
 
-const generarSKU = (nombreTipo, nombreMarca) => {
-  const tipo = nombreTipo.slice(0, 3).toUpperCase();
-  const marca = nombreMarca.slice(0, 3).toUpperCase();
-  const random = Math.floor(1000 + Math.random() * 9000); // 4 dígitos aleatorios
-  return `${tipo}-${marca}-${random}`;
-};
-
-// Crear nuevo repuesto
-app.post('/repuestos-marca', async (req, res) => {
+app.post('/repuestos-marca', verificarToken, async (req, res) => {
   const { nombre, descripcion, precio, precio_mayor, precio_cliente, tipo_repuesto_id, marca_id, stock } = req.body;
 
   try {
-    // Obtener nombre de tipo y marca para el SKU
     const tipoRes = await db.query('SELECT nombre FROM tipos_repuestos WHERE id = $1', [tipo_repuesto_id]);
     const marcaRes = await db.query('SELECT marca FROM marcas WHERE id = $1', [marca_id]);
 
@@ -203,9 +228,7 @@ app.post('/repuestos-marca', async (req, res) => {
   }
 });
 
-
-// Eliminar repuesto por ID
-app.delete('/repuestos-marca/:id', async (req, res) => {
+app.delete('/repuestos-marca/:id', verificarToken, async (req, res) => {
   const { id } = req.params;
   try {
     await db.query('DELETE FROM repuestos WHERE id = $1', [id]);
@@ -216,28 +239,7 @@ app.delete('/repuestos-marca/:id', async (req, res) => {
   }
 });
 
-// Obtener marcas disponibles para un tipo de repuesto específico
-app.get('/marcas-por-tipo/:tipoRepuestoId', async (req, res) => {
-  const { tipoRepuestoId } = req.params;
-  console.log('tipoRepuestoId recibido:', tipoRepuestoId);
-  try {
-    const result = await db.query(`
-      SELECT m.id, m.marca, t.nombre AS tipo_repuesto
-      FROM marcas m
-      JOIN marca_tipo_repuesto mt ON m.id = mt.marca_id
-      JOIN tipos_repuestos t ON mt.tipo_repuesto_id = t.id
-      WHERE t.id = $1
-    `, [tipoRepuestoId]);
-    console.log('Cantidad de resultados:', result.rowCount);
-    res.json(result.rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error al obtener las marcas' });
-  }
-});
-
-// Obtener repuestos por tipo y marca (tabla corregida)
-app.get('/repuestos/:tipoRepuestoId/:marcaId', async (req, res) => {
+app.get('/repuestos/:tipoRepuestoId/:marcaId', verificarToken, async (req, res) => {
   const { tipoRepuestoId, marcaId } = req.params;
   try {
     const result = await db.query(`
@@ -253,6 +255,26 @@ app.get('/repuestos/:tipoRepuestoId/:marcaId', async (req, res) => {
   }
 });
 
+
+// =================== MARCAS POR TIPO ===================
+app.get('/marcas-por-tipo/:tipoRepuestoId', verificarToken, async (req, res) => {
+  const { tipoRepuestoId } = req.params;
+  try {
+    const result = await db.query(`
+      SELECT m.id, m.marca, t.nombre AS tipo_repuesto
+      FROM marcas m
+      JOIN marca_tipo_repuesto mt ON m.id = mt.marca_id
+      JOIN tipos_repuestos t ON mt.tipo_repuesto_id = t.id
+      WHERE t.id = $1
+    `, [tipoRepuestoId]);
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al obtener las marcas' });
+  }
+});
+
+// =================== SERVER ===================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en el puerto ${PORT}`);
