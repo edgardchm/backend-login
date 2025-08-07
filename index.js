@@ -250,7 +250,7 @@ app.get('/repuestos/:tipoRepuestoId/:marcaId', verificarToken, async (req, res) 
   const { tipoRepuestoId, marcaId } = req.params;
   try {
     const result = await db.query(`
-      SELECT id, nombre, precio_mayor, precio_cliente, stock
+      SELECT id, nombre, precio_mayor, precio_cliente, stock, sku
       FROM repuestos
       WHERE tipo_repuesto_id = $1 AND marca_id = $2
       ORDER BY nombre
