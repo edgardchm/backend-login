@@ -292,7 +292,7 @@ app.get('/productos/:sku', verificarToken, async (req, res) => {
       WHERE p.sku = $1
     `;
 
-    const result = await db.query(query, [sku]);  // Aquí usas db.query
+    const result = await db.query(query, [sku]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Producto no encontrado' });
@@ -301,7 +301,7 @@ app.get('/productos/:sku', verificarToken, async (req, res) => {
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error consultando producto por SKU:', error);
-    res.status(500).json({ error: 'Error en el servidor' });
+    res.status(500).json({ error: error.message, stack: error.stack });  // <- Aquí el mensaje real
   }
 });
 
