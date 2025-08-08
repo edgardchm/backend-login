@@ -283,14 +283,14 @@ app.get('/productos/:sku', verificarToken, async (req, res) => {
 
   try {
     const query = `
-      SELECT p.*, 
-             m.nombre AS marca, 
-             t.nombre AS tipo
-      FROM productos p
-      LEFT JOIN marcas m ON p.marca_id = m.id
-      LEFT JOIN tipos_producto t ON p.tipo_id = t.id
-      WHERE p.sku = $1
-    `;
+    SELECT p.*, 
+         m.marca AS marca, 
+         t.nombre AS tipo
+    FROM productos p
+    LEFT JOIN marcas m ON p.marca_id = m.id
+    LEFT JOIN tipos_producto t ON p.tipo_id = t.id
+    WHERE p.sku = $1
+`;
 
     const result = await db.query(query, [sku]);
 
