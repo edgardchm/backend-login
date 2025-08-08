@@ -2,7 +2,7 @@ const cors = require('cors');
 const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const db = require('./db');
+const db = require('./db'); // Asegúrate que ./db exporta el pool correctamente
 require('dotenv').config();
 
 const app = express();
@@ -84,7 +84,6 @@ app.post('/login', async (req, res) => {
   }
 });
 
-
 // =================== TIPO DE REPUESTOS ===================
 app.get('/repuestos', verificarToken, async (req, res) => {
   try {
@@ -129,7 +128,6 @@ app.delete('/repuestos/:id', verificarToken, async (req, res) => {
     res.status(500).json({ error: 'Error al eliminar el repuesto' });
   }
 });
-
 
 // =================== MARCAS ===================
 app.get('/marcas', verificarToken, async (req, res) => {
@@ -181,7 +179,6 @@ app.delete('/marcas/:id', verificarToken, async (req, res) => {
     res.status(500).json({ error: 'Error al eliminar la marca' });
   }
 });
-
 
 // =================== REPUESTOS ===================
 const generarSKU = (nombreTipo, nombreMarca) => {
@@ -262,7 +259,6 @@ app.get('/repuestos/:tipoRepuestoId/:marcaId', verificarToken, async (req, res) 
   }
 });
 
-
 // =================== MARCAS POR TIPO ===================
 app.get('/marcas-por-tipo/:tipoRepuestoId', verificarToken, async (req, res) => {
   const { tipoRepuestoId } = req.params;
@@ -281,9 +277,9 @@ app.get('/marcas-por-tipo/:tipoRepuestoId', verificarToken, async (req, res) => 
   }
 });
 
-app.get('/productos/:sku', async (req, res) => {
+// =================== PRODUCTOS ===================
+app.get('/productos/:sku', verificarToken, async (req, res) => {
   const { sku } = req.params;
-  console.log('SKU recibido:', sku);
 
   try {
     const query = `
@@ -296,8 +292,7 @@ app.get('/productos/:sku', async (req, res) => {
       WHERE p.sku = $1
     `;
 
-    const result = await pool.query(query, [sku]);
-    console.log('Resultado consulta:', result.rows);
+    const result = await db.query(query, [sku]);  // Aquí usas db.query
 
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Producto no encontrado' });
@@ -306,10 +301,9 @@ app.get('/productos/:sku', async (req, res) => {
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error consultando producto por SKU:', error);
-    res.status(500).json({ error: error.message }); // Para debug, mostrar error real
+    res.status(500).json({ error: 'Error en el servidor' });
   }
 });
-
 
 // =================== SERVER ===================
 const PORT = process.env.PORT || 3000;
