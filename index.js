@@ -281,8 +281,9 @@ app.get('/marcas-por-tipo/:tipoRepuestoId', verificarToken, async (req, res) => 
   }
 });
 
-app.get('/productos/:sku', verificarToken, async (req, res) => {
+app.get('/productos/:sku', async (req, res) => {
   const { sku } = req.params;
+  console.log('SKU recibido:', sku);
 
   try {
     const query = `
@@ -296,6 +297,7 @@ app.get('/productos/:sku', verificarToken, async (req, res) => {
     `;
 
     const result = await pool.query(query, [sku]);
+    console.log('Resultado consulta:', result.rows);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Producto no encontrado' });
@@ -304,9 +306,10 @@ app.get('/productos/:sku', verificarToken, async (req, res) => {
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error consultando producto por SKU:', error);
-    res.status(500).json({ error: 'Error en el servidor' });
+    res.status(500).json({ error: error.message }); // Para debug, mostrar error real
   }
 });
+
 
 // =================== SERVER ===================
 const PORT = process.env.PORT || 3000;
