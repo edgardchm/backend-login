@@ -286,29 +286,24 @@ app.get('/productos/:sku', verificarToken, async (req, res) => {
 
   try {
     const query = `
-      SELECT 
-        p.sku, 
-        p.nombre, 
-        m.marca AS marca_nombre,
-        t.nombre AS tipo_nombre,
-        p.precio_cliente, 
-        p.precio_mayorista
+      SELECT p.*, 
+             m.nombre AS marca, 
+             t.nombre AS tipo
       FROM productos p
       LEFT JOIN marcas m ON p.marca_id = m.id
       LEFT JOIN tipos_producto t ON p.tipo_id = t.id
       WHERE p.sku = $1
     `;
 
-    const { rows } = await pool.query(query, [sku]);
+    const result = await pool.query(query, [sku]);
 
-    if (rows.length === 0) {
-      return res.status(404).json({ error: 'Producto no encontrado' });
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Producto no encontrado' });
     }
 
-    res.json(rows[0]);
-
+    res.json(result.rows[0]);
   } catch (error) {
-    console.error('Error al consultar el producto:', error);
+    console.error('Error consultando producto por SKU:', error);
     res.status(500).json({ error: 'Error en el servidor' });
   }
 });
