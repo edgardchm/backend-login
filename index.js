@@ -367,7 +367,6 @@ app.get('/ventas', verificarToken, async (req, res) => {
           'descripcion', d.descripcion,
           'cantidad', d.cantidad,
           'precio_unitario', d.precio_unitario,
-          'subtotal', d.subtotal
         )
       ) AS items
       FROM ventas v
@@ -414,7 +413,6 @@ app.get('/ventas/reporte/:periodo', verificarToken, async (req, res) => {
           'descripcion', d.descripcion,
           'cantidad', d.cantidad,
           'precio_unitario', d.precio_unitario,
-          'subtotal', d.subtotal
         )
       ) AS items
       FROM ventas v
