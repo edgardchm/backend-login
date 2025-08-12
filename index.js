@@ -308,29 +308,41 @@ app.get('/productos/:sku', verificarToken, async (req, res) => {
 // -----------------------------
 // Crear una venta con detalles
 // -----------------------------
-app.post('/ventas', verificarToken , async (req, res) => {
+app.post('/ventas', verificarToken, async (req, res) => {
   const client = await pool.connect();
   try {
     const { numero_boleta, fecha, vendedor, forma_pago, total, monto_recibido, vuelto, items } = req.body;
 
     await client.query('BEGIN');
 
-    // Insertar venta y obtener su ID
     const ventaResult = await client.query(
       `INSERT INTO ventas (numero_boleta, fecha, vendedor, forma_pago, total, monto_recibido, vuelto)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING id`,
-      [numero_boleta, fecha, vendedor, forma_pago, total, monto_recibido, vuelto]
+      [
+        numero_boleta,
+        new Date(fecha).toISOString(), // Asegura formato ISO
+        vendedor,
+        forma_pago,
+        Number(total),
+        Number(monto_recibido),
+        Number(vuelto)
+      ]
     );
 
     const ventaId = ventaResult.rows[0].id;
 
-    // Insertar detalles
     for (const item of items) {
       await client.query(
         `INSERT INTO ventas_detalle (venta_id, sku, descripcion, cantidad, precio_unitario)
          VALUES ($1, $2, $3, $4, $5)`,
-        [ventaId, item.sku, item.descripcion, item.cantidad, item.precio_unitario]
+        [
+          ventaId,
+          item.sku,
+          item.descripcion,
+          Number(item.cantidad),
+          Number(item.precio_unitario) // Conversión a número
+        ]
       );
     }
 
@@ -339,12 +351,13 @@ app.post('/ventas', verificarToken , async (req, res) => {
 
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error(error);
-    res.status(500).json({ error: 'Error al registrar la venta' });
+    console.error('Error al registrar venta:', error.message, error.stack);
+    res.status(500).json({ error: 'Error al registrar la venta', detalle: error.message });
   } finally {
     client.release();
   }
 });
+
 
 
 // -----------------------------
