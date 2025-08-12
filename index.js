@@ -337,19 +337,26 @@ app.post('/ventas', verificarToken, async (req, res) => {
     const ventaId = ventaResult.rows[0].id;
 
     for (const item of items) {
-      const subtotal = Number(item.cantidad) * Number(item.precio_unitario);
-      await client.query(
-        `INSERT INTO ventas_detalle (venta_id, sku, descripcion, cantidad, precio_unitario, subtotal)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [
-          ventaId,
-          item.sku,
-          item.descripcion,
-          Number(item.cantidad),
-          Number(item.precio_unitario),
-          subtotal
-        ]
-      );
+      try {
+        const cantidad = Number(item.cantidad);
+        const precio_unitario = Number(item.precio_unitario);
+
+        if (isNaN(cantidad) || isNaN(precio_unitario)) {
+          throw new Error(`Cantidad o precio_unitario inválidos en item: ${JSON.stringify(item)}`);
+        }
+
+        const subtotal = cantidad * precio_unitario;
+
+        await client.query(
+          `INSERT INTO ventas_detalle (venta_id, sku, descripcion, cantidad, precio_unitario, subtotal)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [ventaId, item.sku, item.descripcion, cantidad, precio_unitario, subtotal]
+        );
+
+      } catch (itemError) {
+        console.error('Error en item:', itemError);
+        throw itemError;
+      }
     }
 
     await client.query('COMMIT');
@@ -357,16 +364,13 @@ app.post('/ventas', verificarToken, async (req, res) => {
 
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error('Error al registrar venta:', error); // Aquí logueamos el error completo
-    res.status(500).json({
-      error: 'Error al registrar la venta',
-      detalle: error.message,
-      stack: error.stack
-    });
+    console.error('Error al registrar venta:', error);
+    res.status(500).json({ error: 'Error al registrar la venta', detalle: error.message, stack: error.stack });
   } finally {
     client.release();
   }
 });
+
 
 
 
