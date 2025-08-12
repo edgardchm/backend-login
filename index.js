@@ -309,7 +309,6 @@ app.get('/productos/:sku', verificarToken, async (req, res) => {
 // Crear una venta con detalles
 // -----------------------------
 app.post('/ventas', verificarToken, async (req, res) => {
-  const client = await pool.connect();
   try {
     const { numero_boleta, fecha, vendedor, forma_pago, total, monto_recibido, vuelto, items } = req.body;
 
@@ -359,7 +358,8 @@ app.post('/ventas', verificarToken, async (req, res) => {
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Error al registrar venta:', error.message, error.stack);
-    res.status(500).json({ error: 'Error al registrar la venta', detalle: error.message });
+    // Respuesta detallada para desarrollo, quitar stack en producción
+    res.status(500).json({ error: 'Error al registrar la venta', detalle: error.message, stack: error.stack });
   } finally {
     client.release();
   }
