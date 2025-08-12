@@ -308,7 +308,7 @@ app.get('/productos/:sku', verificarToken, async (req, res) => {
 // -----------------------------
 // Crear una venta con detalles
 // -----------------------------
-app.post('/ventas', async (req, res) => {
+app.post('/ventas', verificarToken , async (req, res) => {
   const client = await pool.connect();
   try {
     const { numero_boleta, fecha, vendedor, forma_pago, total, monto_recibido, vuelto, items } = req.body;
@@ -350,7 +350,7 @@ app.post('/ventas', async (req, res) => {
 // -----------------------------
 // Obtener todas las ventas con sus detalles
 // -----------------------------
-app.get('/ventas', async (req, res) => {
+app.get('/ventas', verificarToken, async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT v.*, json_agg(
@@ -377,7 +377,7 @@ app.get('/ventas', async (req, res) => {
 // -----------------------------
 // Reporte filtrado por periodo
 // -----------------------------
-app.get('/ventas/reporte/:periodo', async (req, res) => {
+app.get('/ventas/reporte/:periodo', verificarToken, async (req, res) => {
   const { periodo } = req.params;
 
   let filtroFecha;
