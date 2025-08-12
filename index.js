@@ -337,9 +337,9 @@ app.post('/ventas', verificarToken, async (req, res) => {
       const subtotal = cantidad * precio_unitario;
 
       await client.query(
-        `INSERT INTO ventas_detalle (venta_id, sku, descripcion, cantidad, precio_unitario, subtotal)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [ventaId, item.sku, item.descripcion, cantidad, precio_unitario, subtotal]
+        `INSERT INTO ventas_detalle (venta_id, sku, descripcion, cantidad, precio_unitario)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [ventaId, item.sku, item.descripcion, cantidad, precio_unitario]
       );
     }
 
