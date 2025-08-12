@@ -309,10 +309,10 @@ app.get('/productos/:sku', verificarToken, async (req, res) => {
 // Crear una venta con detalles
 // -----------------------------
 app.post('/ventas', verificarToken, async (req, res) => {
+  const client = await db.connect();  // <--- Aquí obtienes el cliente
   try {
     const { numero_boleta, fecha, vendedor, forma_pago, total, monto_recibido, vuelto, items } = req.body;
 
-    // Validar que items sea arreglo y no vacío
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'Debe enviar al menos un item en ventas_detalle' });
     }
@@ -358,12 +358,12 @@ app.post('/ventas', verificarToken, async (req, res) => {
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Error al registrar venta:', error.message, error.stack);
-    // Respuesta detallada para desarrollo, quitar stack en producción
     res.status(500).json({ error: 'Error al registrar la venta', detalle: error.message, stack: error.stack });
   } finally {
     client.release();
   }
 });
+
 
 
 
