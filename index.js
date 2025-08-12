@@ -2,10 +2,11 @@ const cors = require('cors');
 const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const db = require('./db'); // Asegúrate que ./db exporta el pool correctamente
+const db = require('./db'); // db exporta el pool de pg
 require('dotenv').config();
 
 const app = express();
+
 app.use(express.json());
 app.use(cors({
   origin: true,
@@ -20,14 +21,12 @@ const SECRET_KEY = process.env.JWT_SECRET || 'clave_por_defecto';
 function verificarToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
-
   if (!token) {
     return res.status(401).json({ error: 'Token no proporcionado' });
   }
 
   jwt.verify(token, SECRET_KEY, (err, user) => {
     if (err) return res.status(403).json({ error: 'Token inválido' });
-
     req.user = user;
     next();
   });
@@ -38,10 +37,7 @@ app.post('/login', async (req, res) => {
   const { email, password } = req.body;
 
   try {
-    const result = await db.query(
-      'SELECT * FROM usuarios WHERE email = $1',
-      [email]
-    );
+    const result = await db.query('SELECT * FROM usuarios WHERE email = $1', [email]);
 
     if (result.rows.length === 0) {
       return res.status(401).json({ error: 'Email o contraseña incorrectos' });
@@ -57,17 +53,11 @@ app.post('/login', async (req, res) => {
 
     // Crear JWT
     const token = jwt.sign(
-      {
-        id: user.id,
-        email: user.email,
-        rol: user.rol,
-        nombre: user.nombre
-      },
+      { id: user.id, email: user.email, rol: user.rol, nombre: user.nombre },
       SECRET_KEY,
       { expiresIn: '8h' }
     );
 
-    // Devolver token y datos del usuario
     res.status(200).json({
       token,
       user: {
@@ -251,7 +241,7 @@ app.get('/repuestos/:tipoRepuestoId/:marcaId', verificarToken, async (req, res) 
       FROM repuestos
       WHERE tipo_repuesto_id = $1 AND marca_id = $2
       ORDER BY nombre
-    `, [tipoRepuestoId, marcaId]);    
+    `, [tipoRepuestoId, marcaId]);
     res.json(result.rows);
   } catch (err) {
     console.error(err);
@@ -283,14 +273,14 @@ app.get('/productos/:sku', verificarToken, async (req, res) => {
 
   try {
     const query = `
-    SELECT p.*, 
-         m.marca AS marca, 
-         t.nombre AS tipo
-    FROM productos p
-    LEFT JOIN marcas m ON p.marca_id = m.id
-    LEFT JOIN tipos_producto t ON p.tipo_id = t.id
-    WHERE p.sku = $1
-`;
+      SELECT p.*, 
+             m.marca AS marca, 
+             t.nombre AS tipo
+      FROM productos p
+      LEFT JOIN marcas m ON p.marca_id = m.id
+      LEFT JOIN tipos_producto t ON p.tipo_id = t.id
+      WHERE p.sku = $1
+    `;
 
     const result = await db.query(query, [sku]);
 
@@ -301,7 +291,7 @@ app.get('/productos/:sku', verificarToken, async (req, res) => {
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error consultando producto por SKU:', error);
-    res.status(500).json({ error: error.message, stack: error.stack });  // <- Aquí el mensaje real
+    res.status(500).json({ error: error.message, stack: error.stack });
   }
 });
 
@@ -337,26 +327,20 @@ app.post('/ventas', verificarToken, async (req, res) => {
     const ventaId = ventaResult.rows[0].id;
 
     for (const item of items) {
-      try {
-        const cantidad = Number(item.cantidad);
-        const precio_unitario = Number(item.precio_unitario);
+      const cantidad = Number(item.cantidad);
+      const precio_unitario = Number(item.precio_unitario);
 
-        if (isNaN(cantidad) || isNaN(precio_unitario)) {
-          throw new Error(`Cantidad o precio_unitario inválidos en item: ${JSON.stringify(item)}`);
-        }
-
-        const subtotal = cantidad * precio_unitario;
-
-        await client.query(
-          `INSERT INTO ventas_detalle (venta_id, sku, descripcion, cantidad, precio_unitario, subtotal)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [ventaId, item.sku, item.descripcion, cantidad, precio_unitario, subtotal]
-        );
-
-      } catch (itemError) {
-        console.error('Error en item:', itemError);
-        throw itemError;
+      if (isNaN(cantidad) || isNaN(precio_unitario)) {
+        throw new Error(`Cantidad o precio_unitario inválidos en item: ${JSON.stringify(item)}`);
       }
+
+      const subtotal = cantidad * precio_unitario;
+
+      await client.query(
+        `INSERT INTO ventas_detalle (venta_id, sku, descripcion, cantidad, precio_unitario, subtotal)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [ventaId, item.sku, item.descripcion, cantidad, precio_unitario, subtotal]
+      );
     }
 
     await client.query('COMMIT');
@@ -371,15 +355,12 @@ app.post('/ventas', verificarToken, async (req, res) => {
   }
 });
 
-
-
-
 // -----------------------------
 // Obtener todas las ventas con sus detalles
 // -----------------------------
 app.get('/ventas', verificarToken, async (req, res) => {
   try {
-    const result = await pool.query(`
+    const result = await db.query(`
       SELECT v.*, json_agg(
         json_build_object(
           'sku', d.sku,
@@ -426,7 +407,7 @@ app.get('/ventas/reporte/:periodo', verificarToken, async (req, res) => {
   }
 
   try {
-    const result = await pool.query(`
+    const result = await db.query(`
       SELECT v.*, json_agg(
         json_build_object(
           'sku', d.sku,
@@ -448,7 +429,6 @@ app.get('/ventas/reporte/:periodo', verificarToken, async (req, res) => {
     res.status(500).json({ error: 'Error al generar el reporte' });
   }
 });
-
 
 // =================== SERVER ===================
 const PORT = process.env.PORT || 3000;

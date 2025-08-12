@@ -3,6 +3,4 @@ require('dotenv').config();
 
 const pool = new Pool();
 
-module.exports = {
-  query: (text, params) => pool.query(text, params)
-};
+module.exports = pool; // Exporta el pool completo para usar connect(), query(), etc.
