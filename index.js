@@ -313,6 +313,11 @@ app.post('/ventas', verificarToken, async (req, res) => {
   try {
     const { numero_boleta, fecha, vendedor, forma_pago, total, monto_recibido, vuelto, items } = req.body;
 
+    // Validar que items sea arreglo y no vacío
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'Debe enviar al menos un item en ventas_detalle' });
+    }
+
     await client.query('BEGIN');
 
     const ventaResult = await client.query(
@@ -321,7 +326,7 @@ app.post('/ventas', verificarToken, async (req, res) => {
        RETURNING id`,
       [
         numero_boleta,
-        new Date(fecha).toISOString(), // Asegura formato ISO
+        new Date(fecha).toISOString(),
         vendedor,
         forma_pago,
         Number(total),
@@ -333,15 +338,17 @@ app.post('/ventas', verificarToken, async (req, res) => {
     const ventaId = ventaResult.rows[0].id;
 
     for (const item of items) {
+      const subtotal = Number(item.cantidad) * Number(item.precio_unitario);
       await client.query(
-        `INSERT INTO ventas_detalle (venta_id, sku, descripcion, cantidad, precio_unitario)
-         VALUES ($1, $2, $3, $4, $5)`,
+        `INSERT INTO ventas_detalle (venta_id, sku, descripcion, cantidad, precio_unitario, subtotal)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
         [
           ventaId,
           item.sku,
           item.descripcion,
           Number(item.cantidad),
-          Number(item.precio_unitario) // Conversión a número
+          Number(item.precio_unitario),
+          subtotal
         ]
       );
     }
@@ -357,6 +364,7 @@ app.post('/ventas', verificarToken, async (req, res) => {
     client.release();
   }
 });
+
 
 
 
