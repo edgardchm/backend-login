@@ -445,6 +445,196 @@ app.get('/ventas/reporte/:periodo', verificarToken, async (req, res) => {
   }
 });
 
+app.post('/ordenes', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const {
+      codigo_orden,
+      tecnico_id,
+      cliente_nombre,
+      cliente_telefono,
+      cliente_correo,
+      marca_id,
+      modelo,
+      tipo_equipo_id,
+      imei_serie,
+      patron_contrasena,
+      estado_equipo,
+      diagnostico,
+      observaciones,
+      garantia_id,
+      costo_reparacion,
+      anticipo,
+      // Hijos
+      verificaciones,
+      fallas,
+      repuestos,
+      fotos
+    } = req.body;
+
+    // Insert orden principal
+    const insertOrdenText = `
+      INSERT INTO ordenes_servicio (
+        codigo_orden, tecnico_id, cliente_nombre, cliente_telefono, cliente_correo,
+        marca_id, modelo, tipo_equipo_id, imei_serie, patron_contrasena,
+        estado_equipo, diagnostico, observaciones, garantia_id, costo_reparacion, anticipo, total
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+      RETURNING id`;
+    
+    const total = (costo_reparacion || 0) - (anticipo || 0);
+
+    const resOrden = await client.query(insertOrdenText, [
+      codigo_orden, tecnico_id, cliente_nombre, cliente_telefono, cliente_correo,
+      marca_id, modelo, tipo_equipo_id, imei_serie, patron_contrasena,
+      estado_equipo, diagnostico, observaciones, garantia_id, costo_reparacion || 0, anticipo || 0, total
+    ]);
+    const ordenId = resOrden.rows[0].id;
+
+    // Insert verificaciones_equipo si vienen
+    if (Array.isArray(verificaciones)) {
+      for (const v of verificaciones) {
+        await client.query(
+          `INSERT INTO verificaciones_equipo 
+            (orden_id, enciende, bandeja_sim, golpes, humedad, altavoz, microfono, auricular, otros)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [ordenId, v.enciende || false, v.bandeja_sim || false, v.golpes || false, v.humedad || false,
+           v.altavoz || false, v.microfono || false, v.auricular || false, v.otros || false]
+        );
+      }
+    }
+
+    // Insert fallas si vienen
+    if (Array.isArray(fallas)) {
+      for (const f of fallas) {
+        await client.query(
+          `INSERT INTO fallas (orden_id, descripcion) VALUES ($1,$2)`,
+          [ordenId, f.descripcion]
+        );
+      }
+    }
+
+    // Insert repuestos si vienen
+    if (Array.isArray(repuestos)) {
+      for (const r of repuestos) {
+        await client.query(
+          `INSERT INTO orden_repuestos (orden_id, repuesto_id, cantidad, precio_unitario) VALUES ($1,$2,$3,$4)`,
+          [ordenId, r.repuesto_id, r.cantidad, r.precio_unitario]
+        );
+      }
+    }
+
+    // Insert fotos si vienen
+    if (Array.isArray(fotos)) {
+      for (const f of fotos) {
+        await client.query(
+          `INSERT INTO fotos_orden (orden_id, ruta_foto) VALUES ($1,$2)`,
+          [ordenId, f.ruta_foto]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+    res.status(201).json({ message: 'Orden creada', ordenId });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error creando orden:', error);
+    res.status(500).json({ error: 'Error creando orden' });
+  } finally {
+    client.release();
+  }
+});
+
+
+app.get('/ordenes', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT o.*, u.nombre AS tecnico_nombre, g.nombre AS garantia_nombre, m.nombre AS marca_nombre, te.nombre AS tipo_equipo_nombre
+      FROM ordenes_servicio o
+      LEFT JOIN usuarios u ON o.tecnico_id = u.id
+      LEFT JOIN garantias g ON o.garantia_id = g.id
+      LEFT JOIN marcas m ON o.marca_id = m.id
+      LEFT JOIN tipos_equipo te ON o.tipo_equipo_id = te.id
+      ORDER BY o.fecha_ingreso DESC
+      LIMIT 50
+    `);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error listando órdenes:', error);
+    res.status(500).json({ error: 'Error listando órdenes' });
+  }
+});
+
+app.get('/ordenes/:id', async (req, res) => {
+  const ordenId = req.params.id;
+  try {
+    const ordenResult = await pool.query(`
+      SELECT o.*, u.nombre AS tecnico_nombre, g.nombre AS garantia_nombre, m.nombre AS marca_nombre, te.nombre AS tipo_equipo_nombre
+      FROM ordenes_servicio o
+      LEFT JOIN usuarios u ON o.tecnico_id = u.id
+      LEFT JOIN garantias g ON o.garantia_id = g.id
+      LEFT JOIN marcas m ON o.marca_id = m.id
+      LEFT JOIN tipos_equipo te ON o.tipo_equipo_id = te.id
+      WHERE o.id = $1
+    `, [ordenId]);
+
+    if (ordenResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Orden no encontrada' });
+    }
+
+    const orden = ordenResult.rows[0];
+
+    const [verificacionesRes, fallasRes, repuestosRes, fotosRes] = await Promise.all([
+      pool.query('SELECT * FROM verificaciones_equipo WHERE orden_id = $1', [ordenId]),
+      pool.query('SELECT * FROM fallas WHERE orden_id = $1', [ordenId]),
+      pool.query(`
+        SELECT orp.*, p.nombre AS repuesto_nombre 
+        FROM orden_repuestos orp
+        LEFT JOIN productos p ON orp.repuesto_id = p.id
+        WHERE orp.orden_id = $1
+      `, [ordenId]),
+      pool.query('SELECT * FROM fotos_orden WHERE orden_id = $1', [ordenId])
+    ]);
+
+    res.json({
+      orden,
+      verificaciones: verificacionesRes.rows,
+      fallas: fallasRes.rows,
+      repuestos: repuestosRes.rows,
+      fotos: fotosRes.rows,
+    });
+  } catch (error) {
+    console.error('Error obteniendo detalle de orden:', error);
+    res.status(500).json({ error: 'Error obteniendo detalle de orden' });
+  }
+});
+
+app.patch('/ordenes/:id', async (req, res) => {
+  const ordenId = req.params.id;
+  const { estado_equipo, diagnostico, observaciones } = req.body;
+  try {
+    const result = await pool.query(`
+      UPDATE ordenes_servicio
+      SET estado_equipo = COALESCE($1, estado_equipo),
+          diagnostico = COALESCE($2, diagnostico),
+          observaciones = COALESCE($3, observaciones)
+      WHERE id = $4
+      RETURNING *
+    `, [estado_equipo, diagnostico, observaciones, ordenId]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Orden no encontrada' });
+    }
+
+    res.json({ message: 'Orden actualizada', orden: result.rows[0] });
+  } catch (error) {
+    console.error('Error actualizando orden:', error);
+    res.status(500).json({ error: 'Error actualizando orden' });
+  }
+});
+
+
 // =================== SERVER ===================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
