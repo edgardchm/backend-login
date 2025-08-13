@@ -267,6 +267,20 @@ app.get('/marcas-por-tipo/:tipoRepuestoId', verificarToken, async (req, res) => 
   }
 });
 
+
+// =================== PRODUCTOS TOTALES (CANTIDAD EN STOCK) ===================
+
+app.get('/productos/total', verificarToken, async (req, res) => {
+  try {
+    const query = `SELECT COUNT(*) AS total FROM productos`;
+    const result = await db.query(query);
+    res.json({ total: parseInt(result.rows[0].total, 10) });
+  } catch (error) {
+    console.error('Error obteniendo total de productos:', error);
+    res.status(500).json({ error: error.message, stack: error.stack });
+  }
+});
+
 // =================== PRODUCTOS ===================
 app.get('/productos/:sku', verificarToken, async (req, res) => {
   const { sku } = req.params;
@@ -291,19 +305,6 @@ app.get('/productos/:sku', verificarToken, async (req, res) => {
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error consultando producto por SKU:', error);
-    res.status(500).json({ error: error.message, stack: error.stack });
-  }
-});
-
-// =================== PRODUCTOS TOTALES (CANTIDAD EN STOCK) ===================
-
-app.get('/productos/total', verificarToken, async (req, res) => {
-  try {
-    const query = `SELECT COUNT(*) AS total FROM productos`;
-    const result = await db.query(query);
-    res.json({ total: parseInt(result.rows[0].total, 10) });
-  } catch (error) {
-    console.error('Error obteniendo total de productos:', error);
     res.status(500).json({ error: error.message, stack: error.stack });
   }
 });
