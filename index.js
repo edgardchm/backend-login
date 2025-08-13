@@ -295,6 +295,20 @@ app.get('/productos/:sku', verificarToken, async (req, res) => {
   }
 });
 
+// =================== PRODUCTOS TOTALES (CANTIDAD EN STOCK) ===================
+
+app.get('/productos/total', verificarToken, async (req, res) => {
+  try {
+    const query = `SELECT COUNT(*) AS total FROM productos`;
+    const result = await db.query(query);
+    res.json({ total: parseInt(result.rows[0].total, 10) });
+  } catch (error) {
+    console.error('Error obteniendo total de productos:', error);
+    res.status(500).json({ error: error.message, stack: error.stack });
+  }
+});
+
+
 // -----------------------------
 // Crear una venta con detalles
 // -----------------------------
