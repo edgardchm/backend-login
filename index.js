@@ -655,7 +655,7 @@ app.post('/usuarios', verificarToken, async (req, res) => {
     const saltRounds = 10;
     const password_hash = await bcrypt.hash(password, saltRounds);
 
-    const result = await pool.query(
+    const result = await db.query(
       `INSERT INTO usuarios (nombre, email, password_hash, rol, creado_en, actualizado_en) 
        VALUES ($1, $2, $3, $4, NOW(), NOW()) RETURNING id, nombre, email, rol`,
       [nombre, email, password_hash, rol]
@@ -673,7 +673,7 @@ app.put('/usuarios/:id', verificarToken, async (req, res) => {
   const { rol } = req.body;
 
   try {
-    const result = await pool.query(
+    const result = await db.query(
       `UPDATE usuarios SET rol = $1, actualizado_en = NOW() WHERE id = $2 RETURNING id, nombre, email, rol`,
       [rol, id]
     );
@@ -689,21 +689,14 @@ app.put('/usuarios/:id', verificarToken, async (req, res) => {
   }
 });
 
-app.delete('/usuarios/:id', async (req, res) => {
+app.delete('/usuarios/:id', verificarToken, async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  console.log('ID recibido:', id);
 
-  if (isNaN(id)) {
-    return res.status(400).json({ error: 'ID inválido' });
-  }
+  if (isNaN(id)) return res.status(400).json({ error: 'ID inválido' });
 
   try {
-    const result = await pool.query(
-      'DELETE FROM usuarios WHERE id = $1 RETURNING id',
-      [id]
-    );
-
-    console.log('Resultado de la query:', result);
+    // Usar db.query en vez de pool.query
+    const result = await db.query('DELETE FROM usuarios WHERE id = $1 RETURNING id', [id]);
 
     if (result.rowCount === 0) {
       return res.status(404).json({ message: 'Usuario no encontrado' });
@@ -711,12 +704,11 @@ app.delete('/usuarios/:id', async (req, res) => {
 
     res.json({ message: 'Usuario eliminado correctamente', id: result.rows[0].id });
   } catch (error) {
-    // Mostrar todos los detalles del error
-    console.error('Error en DELETE /usuarios/:id:');
-    console.error(error);
-    res.status(500).json({ error: error.message, stack: error.stack });
+    console.error('Error al eliminar usuario:', error);
+    res.status(500).json({ error: error.message });
   }
 });
+
 
 
 
