@@ -689,18 +689,13 @@ app.put('/usuarios/:id', verificarToken, async (req, res) => {
   }
 });
 
-app.delete('/usuarios/:id', verificarToken, async (req, res) => {
-  const id = parseInt(req.params.id, 10);
-
-  if (isNaN(id)) {
-    return res.status(400).json({ error: 'ID inválido' });
-  }
+app.delete('/usuarios/:id', async (req, res) => {
+  const id = req.params.id;
+  console.log('ID recibido:', id);
 
   try {
-    const result = await pool.query(
-      'DELETE FROM usuarios WHERE id = $1 RETURNING id',
-      [id]
-    );
+    const result = await pool.query('DELETE FROM usuarios WHERE id = $1 RETURNING id', [id]);
+    console.log('Resultado query:', result);
 
     if (result.rowCount === 0) {
       return res.status(404).json({ message: 'Usuario no encontrado' });
@@ -708,10 +703,11 @@ app.delete('/usuarios/:id', verificarToken, async (req, res) => {
 
     res.json({ message: 'Usuario eliminado correctamente', id: result.rows[0].id });
   } catch (error) {
-    console.error('Error al eliminar usuario:', error.message, error.stack);
+    console.error('Error en DELETE /usuarios/:id:', error.message, error.stack);
     res.status(500).json({ error: 'Error al eliminar usuario' });
   }
 });
+
 
 
 // =================== SERVER ===================
