@@ -634,6 +634,77 @@ app.patch('/ordenes/:id', async (req, res) => {
   }
 });
 
+app.get('/usuarios', verificarToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT id, nombre, email, rol, creado_en, actualizado_en FROM usuarios ORDER BY id'
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error al obtener usuarios:', error);
+    res.status(500).json({ error: 'Error al obtener usuarios' });
+  }
+});
+
+app.post('/usuarios', verificarToken, async (req, res) => {
+  const { nombre, email, password, rol } = req.body;
+
+  try {
+    // hash password
+    const bcrypt = require('bcrypt');
+    const saltRounds = 10;
+    const password_hash = await bcrypt.hash(password, saltRounds);
+
+    const result = await pool.query(
+      `INSERT INTO usuarios (nombre, email, password_hash, rol, creado_en, actualizado_en) 
+       VALUES ($1, $2, $3, $4, NOW(), NOW()) RETURNING id, nombre, email, rol`,
+      [nombre, email, password_hash, rol]
+    );
+
+    res.json({ message: 'Usuario creado exitosamente', usuario: result.rows[0] });
+  } catch (error) {
+    console.error('Error al crear usuario:', error);
+    res.status(500).json({ error: 'Error al crear usuario' });
+  }
+});
+
+app.put('/usuarios/:id', verificarToken, async (req, res) => {
+  const { id } = req.params;
+  const { rol } = req.body;
+
+  try {
+    const result = await pool.query(
+      `UPDATE usuarios SET rol = $1, actualizado_en = NOW() WHERE id = $2 RETURNING id, nombre, email, rol`,
+      [rol, id]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: 'Usuario no encontrado' });
+    }
+
+    res.json({ message: 'Rol actualizado correctamente', usuario: result.rows[0] });
+  } catch (error) {
+    console.error('Error al actualizar rol:', error);
+    res.status(500).json({ error: 'Error al actualizar rol' });
+  }
+});
+
+app.delete('/usuarios/:id', verificarToken, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const result = await pool.query('DELETE FROM usuarios WHERE id = $1 RETURNING id', [id]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: 'Usuario no encontrado' });
+    }
+
+    res.json({ message: 'Usuario eliminado correctamente', id: result.rows[0].id });
+  } catch (error) {
+    console.error('Error al eliminar usuario:', error);
+    res.status(500).json({ error: 'Error al eliminar usuario' });
+  }
+});
 
 // =================== SERVER ===================
 const PORT = process.env.PORT || 3000;
