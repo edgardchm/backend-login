@@ -636,8 +636,8 @@ app.patch('/ordenes/:id', async (req, res) => {
 
 app.get('/usuarios', verificarToken, async (req, res) => {
   try {
-    const result = await pool.query(
-      'SELECT id, nombre, email, rol, creado_en, actualizado_en FROM usuarios ORDER BY id'
+    const result = await db.query(
+      'SELECT id, nombre, email, rol FROM usuarios'
     );
     res.json(result.rows);
   } catch (error) {
