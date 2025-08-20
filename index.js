@@ -282,8 +282,8 @@ app.get('/productos/total', verificarToken, async (req, res) => {
 });
 
 // =================== PRODUCTOS ===================
-app.get('/productos/:sku', verificarToken, async (req, res) => {
-  const { sku } = req.params;
+app.get('/productos/:busqueda', verificarToken, async (req, res) => {
+  const { busqueda } = req.params;
 
   try {
     const query = `
@@ -293,18 +293,35 @@ app.get('/productos/:sku', verificarToken, async (req, res) => {
       FROM productos p
       LEFT JOIN marcas m ON p.marca_id = m.id
       LEFT JOIN tipos_producto t ON p.tipo_id = t.id
-      WHERE p.sku = $1
+      WHERE p.sku = $1 OR p.nombre ILIKE $2
+      ORDER BY 
+        CASE 
+          WHEN p.sku = $1 THEN 1
+          ELSE 2
+        END,
+        p.nombre
+      LIMIT 10
     `;
 
-    const result = await db.query(query, [sku]);
+    const searchPattern = `%${busqueda}%`;
+    const result = await db.query(query, [busqueda, searchPattern]);
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Producto no encontrado' });
+      return res.status(404).json({ message: 'No se encontraron productos con esa búsqueda' });
     }
 
-    res.json(result.rows[0]);
+    // Si solo hay un resultado exacto por SKU, devolver solo ese
+    if (result.rows.length === 1 && result.rows[0].sku === busqueda) {
+      return res.json(result.rows[0]);
+    }
+
+    // Si hay múltiples resultados, devolver el array
+    res.json({
+      total: result.rows.length,
+      productos: result.rows
+    });
   } catch (error) {
-    console.error('Error consultando producto por SKU:', error);
+    console.error('Error consultando productos:', error);
     res.status(500).json({ error: error.message, stack: error.stack });
   }
 });
