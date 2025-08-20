@@ -293,18 +293,22 @@ app.get('/productos/:busqueda', verificarToken, async (req, res) => {
       FROM productos p
       LEFT JOIN marcas m ON p.marca_id = m.id
       LEFT JOIN tipos_producto t ON p.tipo_id = t.id
-      WHERE p.sku = $1 OR p.nombre ILIKE $2
+      WHERE p.sku = $1 
+         OR p.sku LIKE $3 
+         OR p.nombre ILIKE $2
       ORDER BY 
         CASE 
           WHEN p.sku = $1 THEN 1
-          ELSE 2
+          WHEN p.sku LIKE $3 THEN 2
+          ELSE 3
         END,
         p.nombre
       LIMIT 10
     `;
 
     const searchPattern = `%${busqueda}%`;
-    const result = await db.query(query, [busqueda, searchPattern]);
+    const skuPattern = `%${busqueda}%`;
+    const result = await db.query(query, [busqueda, searchPattern, skuPattern]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'No se encontraron productos con esa búsqueda' });
@@ -318,7 +322,8 @@ app.get('/productos/:busqueda', verificarToken, async (req, res) => {
     // Si hay múltiples resultados, devolver el array
     res.json({
       total: result.rows.length,
-      productos: result.rows
+      productos: result.rows,
+      busqueda: busqueda
     });
   } catch (error) {
     console.error('Error consultando productos:', error);
