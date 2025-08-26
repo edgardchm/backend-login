@@ -730,8 +730,139 @@ app.delete('/usuarios/:id', verificarToken, async (req, res) => {
   }
 });
 
+// =================== ÓRDENES DE SERVICIO ===================
+app.get('/ordenes-servicio', verificarToken, async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT 
+          os.id AS id_orden,
+          os.codigo_orden,
+          os.fecha_ingreso,
+          os.cliente_nombre AS cliente,
+          os.cliente_telefono,
+          os.cliente_correo,
+          te.nombre AS tipo_equipo,
+          m.marca AS marca,
+          os.modelo,
+          os.estado_equipo AS estado,
+          os.imei_serie,
+          os.diagnostico,
+          os.total,
+          os.anticipo,
+          os.costo_reparacion
+      FROM ordenes_servicio os
+      JOIN tipos_equipo te ON te.id = os.tipo_equipo_id
+      JOIN marcas m ON m.id = os.marca_id
+      ORDER BY os.fecha_ingreso DESC
+    `);
 
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al obtener órdenes de servicio' });
+  }
+});
 
+app.post('/ordenes-servicio', verificarToken, async (req, res) => {
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+
+    const {
+      codigo_orden,
+      tecnico_id,
+      cliente_nombre,
+      cliente_telefono,
+      cliente_correo,
+      marca_id,
+      modelo,
+      tipo_equipo_id,
+      imei_serie,
+      patron_contrasena,
+      estado_equipo,
+      diagnostico,
+      observaciones,
+      garantia_id,
+      costo_reparacion,
+      anticipo,
+      // Hijos
+      verificaciones,
+      fallas,
+      repuestos,
+      fotos
+    } = req.body;
+
+    // Insert orden principal
+    const insertOrdenText = `
+      INSERT INTO ordenes_servicio (
+        codigo_orden, tecnico_id, cliente_nombre, cliente_telefono, cliente_correo,
+        marca_id, modelo, tipo_equipo_id, imei_serie, patron_contrasena,
+        estado_equipo, diagnostico, observaciones, garantia_id, costo_reparacion, anticipo, total
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+      RETURNING id`;
+    
+    const total = (costo_reparacion || 0) - (anticipo || 0);
+
+    const resOrden = await client.query(insertOrdenText, [
+      codigo_orden, tecnico_id, cliente_nombre, cliente_telefono, cliente_correo,
+      marca_id, modelo, tipo_equipo_id, imei_serie, patron_contrasena,
+      estado_equipo, diagnostico, observaciones, garantia_id, costo_reparacion || 0, anticipo || 0, total
+    ]);
+    const ordenId = resOrden.rows[0].id;
+
+    // Insert verificaciones_equipo si vienen
+    if (Array.isArray(verificaciones)) {
+      for (const v of verificaciones) {
+        await client.query(
+          `INSERT INTO verificaciones_equipo 
+            (orden_id, enciende, bandeja_sim, golpes, humedad, altavoz, microfono, auricular, otros)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [ordenId, v.enciende || false, v.bandeja_sim || false, v.golpes || false, v.humedad || false,
+           v.altavoz || false, v.microfono || false, v.auricular || false, v.otros || false]
+        );
+      }
+    }
+
+    // Insert fallas si vienen
+    if (Array.isArray(fallas)) {
+      for (const v of fallas) {
+        await client.query(
+          `INSERT INTO fallas (orden_id, descripcion) VALUES ($1,$2)`,
+          [ordenId, v.descripcion]
+        );
+      }
+    }
+
+    // Insert repuestos si vienen
+    if (Array.isArray(repuestos)) {
+      for (const r of repuestos) {
+        await client.query(
+          `INSERT INTO orden_repuestos (orden_id, repuesto_id, cantidad, precio_unitario) VALUES ($1,$2,$3,$4)`,
+          [ordenId, r.repuesto_id, r.cantidad, r.precio_unitario]
+        );
+      }
+    }
+
+    // Insert fotos si vienen
+    if (Array.isArray(fotos)) {
+      for (const f of fotos) {
+        await client.query(
+          `INSERT INTO fotos_orden (orden_id, ruta_foto) VALUES ($1,$2)`,
+          [ordenId, f.ruta_foto]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+    res.status(201).json({ message: 'Orden de servicio creada exitosamente', ordenId });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error creando orden de servicio:', error);
+    res.status(500).json({ error: 'Error al crear la orden de servicio' });
+  } finally {
+    client.release();
+  }
+});
 
 
 // =================== SERVER ===================
