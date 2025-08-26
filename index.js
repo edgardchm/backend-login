@@ -1142,11 +1142,11 @@ app.put('/ordenes-servicio/:id', verificarToken, async (req, res) => {
       // Eliminar fallas existentes
       await client.query('DELETE FROM fallas WHERE orden_id = $1', [id]);
       
-      // Insertar nuevas fallas como en el POST
+      // Insertar nuevas fallas como en el POST (solo orden_id y descripcion)
       for (const f of fallas) {
         await client.query(
-          `INSERT INTO fallas (orden_id, descripcion, prioridad, estado) VALUES ($1,$2,$3,$4)`,
-          [id, f.descripcion, f.prioridad || 'MEDIA', f.estado || 'PENDIENTE']
+          `INSERT INTO fallas (orden_id, descripcion) VALUES ($1,$2)`,
+          [id, f.descripcion]
         );
       }
     }
