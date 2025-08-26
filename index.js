@@ -730,6 +730,31 @@ app.delete('/usuarios/:id', verificarToken, async (req, res) => {
   }
 });
 
+// =================== TIPOS DE EQUIPO ===================
+app.get('/tipos-equipo', verificarToken, async (req, res) => {
+  try {
+    const result = await db.query('SELECT * FROM tipos_equipo ORDER BY nombre');
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al obtener los tipos de equipo' });
+  }
+});
+
+app.post('/tipos-equipo', verificarToken, async (req, res) => {
+  const { nombre } = req.body;
+  try {
+    const result = await db.query(
+      'INSERT INTO tipos_equipo (nombre) VALUES ($1) RETURNING *',
+      [nombre]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al crear el tipo de equipo' });
+  }
+});
+
 // =================== ÓRDENES DE SERVICIO ===================
 app.get('/ordenes-servicio', verificarToken, async (req, res) => {
   try {
@@ -896,6 +921,33 @@ app.post('/ordenes-servicio', verificarToken, async (req, res) => {
     res.status(500).json({ error: 'Error al crear la orden de servicio' });
   } finally {
     client.release();
+  }
+});
+
+// Endpoint para actualizar tipo y marca de una orden existente
+app.patch('/ordenes-servicio/:id/tipo-marca', verificarToken, async (req, res) => {
+  const { id } = req.params;
+  const { tipo_equipo_id, marca_id } = req.body;
+  
+  try {
+    const result = await db.query(`
+      UPDATE ordenes_servicio 
+      SET tipo_equipo_id = $1, marca_id = $2
+      WHERE id = $3 
+      RETURNING *
+    `, [tipo_equipo_id, marca_id, id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Orden no encontrada' });
+    }
+
+    res.json({ 
+      message: 'Tipo y marca actualizados correctamente', 
+      orden: result.rows[0] 
+    });
+  } catch (error) {
+    console.error('Error actualizando tipo y marca:', error);
+    res.status(500).json({ error: 'Error al actualizar tipo y marca' });
   }
 });
 
