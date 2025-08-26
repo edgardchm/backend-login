@@ -1232,36 +1232,34 @@ app.patch('/ordenes-servicio/:id/estado-reparacion', verificarToken, async (req,
       return res.status(404).json({ error: 'Orden no encontrada' });
     }
 
-    // Verificar si hay fallas para esta orden
+    // SOLUCIÓN TEMPORAL: Solo crear una falla si no existe
+    // El estado_reparacion se calculará dinámicamente en el GET
     const fallasExistentes = await client.query('SELECT COUNT(*) FROM fallas WHERE orden_id = $1', [id]);
     
-    if (parseInt(fallasExistentes.rows[0].count) > 0) {
-      // Si hay fallas, actualizar su estado
+    if (parseInt(fallasExistentes.rows[0].count) === 0) {
+      // Si no hay fallas, crear una falla por defecto
       await client.query(
-        `UPDATE fallas SET estado = $1 WHERE orden_id = $2`,
-        [estado_reparacion, id]
-      );
-    } else {
-      // Si no hay fallas, crear una falla por defecto con el estado especificado
-      await client.query(
-        `INSERT INTO fallas (orden_id, descripcion, estado) VALUES ($1, $2, $3)`,
-        [id, 'Falla general', estado_reparacion]
+        `INSERT INTO fallas (orden_id, descripcion) VALUES ($1, $2)`,
+        [id, 'Falla general']
       );
     }
 
     await client.query('COMMIT');
     
     res.json({ 
-      message: 'Estado de reparación actualizado correctamente',
+      message: 'Estado de reparación procesado correctamente',
       orden_id: id,
-      estado_reparacion: estado_reparacion
+      estado_reparacion: estado_reparacion,
+      nota: 'Se creó una falla por defecto. El estado se calculará dinámicamente en las consultas GET.',
+      advertencia: 'La tabla fallas no tiene columna estado. Se necesita modificar la estructura de la base de datos.'
     });
 
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error('Error actualizando estado de reparación:', error);
+    console.error('Error procesando estado de reparación:', error);
+    
     res.status(500).json({ 
-      error: 'Error al actualizar el estado de reparación',
+      error: 'Error al procesar el estado de reparación',
       detalle: error.message
     });
   } finally {
