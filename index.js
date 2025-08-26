@@ -774,6 +774,7 @@ app.get('/ordenes-servicio', verificarToken, async (req, res) => {
           COALESCE(m.marca, 'Sin marca') AS marca,
           os.modelo,
           os.estado_equipo AS estado,
+          os.estado_reparacion,
           os.imei_serie,
           os.diagnostico,
           os.total,
@@ -824,6 +825,7 @@ app.post('/ordenes-servicio', verificarToken, async (req, res) => {
       imei_serie,
       patron_contrasena,
       estado_equipo,
+      estado_reparacion,
       diagnostico,
       observaciones,
       garantia_id,
@@ -865,8 +867,8 @@ app.post('/ordenes-servicio', verificarToken, async (req, res) => {
       INSERT INTO ordenes_servicio (
         codigo_orden, tecnico_id, cliente_nombre, cliente_telefono, cliente_correo,
         marca_id, modelo, tipo_equipo_id, imei_serie, patron_contrasena,
-        estado_equipo, diagnostico, observaciones, garantia_id, costo_reparacion, anticipo, total
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+        estado_equipo, estado_reparacion, diagnostico, observaciones, garantia_id, costo_reparacion, anticipo, total
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
       RETURNING id`;
     
     const total = (costo_reparacion || 0) - (anticipo || 0);
@@ -874,7 +876,7 @@ app.post('/ordenes-servicio', verificarToken, async (req, res) => {
     const resOrden = await client.query(insertOrdenText, [
       codigo_orden, tecnico_id, cliente_nombre, cliente_telefono, cliente_correo,
       marca_id, modelo, tipo_equipo_id, imei_serie, patron_contrasena,
-      estado_equipo, diagnostico, observaciones, garantia_id, costo_reparacion || 0, anticipo || 0, total
+      estado_equipo, estado_reparacion, diagnostico, observaciones, garantia_id, costo_reparacion || 0, anticipo || 0, total
     ]);
     const ordenId = resOrden.rows[0].id;
 
