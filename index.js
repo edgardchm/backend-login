@@ -293,7 +293,7 @@ app.get('/productos/:busqueda', verificarToken, async (req, res) => {
       FROM productos p
       LEFT JOIN marcas m ON p.marca_id = m.id
       LEFT JOIN tipos_producto t ON p.tipo_id = t.id
-      WHERE p.sku = $1 
+      WHERE p.sku = $1
          OR p.sku LIKE $3 
          OR p.nombre ILIKE $2
       ORDER BY 
@@ -1105,16 +1105,15 @@ app.put('/ordenes-servicio/:id', verificarToken, async (req, res) => {
         garantia_id = COALESCE($14, garantia_id),
         costo_reparacion = COALESCE($15, costo_reparacion),
         anticipo = COALESCE($16, anticipo),
-        estado_reparacion = COALESCE($17, estado_reparacion),
-        total = $18
-      WHERE id = $19
+        total = $17
+      WHERE id = $18
       RETURNING *
     `;
 
     const result = await client.query(updateOrdenText, [
       codigo_orden, tecnico_id, cliente_nombre, cliente_telefono, cliente_correo,
       finalMarcaId, modelo, finalTipoEquipoId, imei_serie, patron_contrasena,
-      estado_equipo, diagnostico, observaciones, garantia_id, costo_reparacion || 0, anticipo || 0, estado_reparacion, total, id
+      estado_equipo, diagnostico, observaciones, garantia_id, costo_reparacion || 0, anticipo || 0, total, id
     ]);
 
     if (result.rows.length === 0) {
@@ -1146,10 +1145,18 @@ app.put('/ordenes-servicio/:id', verificarToken, async (req, res) => {
       // Insertar nuevas fallas como en el POST
       for (const f of fallas) {
         await client.query(
-          `INSERT INTO fallas (orden_id, descripcion) VALUES ($1,$2)`,
-          [id, f.descripcion]
+          `INSERT INTO fallas (orden_id, descripcion, prioridad, estado) VALUES ($1,$2,$3,$4)`,
+          [id, f.descripcion, f.prioridad || 'MEDIA', f.estado || 'PENDIENTE']
         );
       }
+    }
+
+    // Si se envía estado_reparacion, actualizar el estado de las fallas existentes
+    if (estado_reparacion) {
+      await client.query(
+        `UPDATE fallas SET estado = $1 WHERE orden_id = $2`,
+        [estado_reparacion, id]
+      );
     }
 
     // Actualizar repuestos usando la misma lógica que el POST
