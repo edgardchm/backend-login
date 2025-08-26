@@ -1032,7 +1032,7 @@ app.put('/ordenes-servicio/:id', verificarToken, async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    let {
+    const {
       codigo_orden,
       tecnico_id,
       cliente_nombre,
@@ -1051,6 +1051,8 @@ app.put('/ordenes-servicio/:id', verificarToken, async (req, res) => {
       garantia_id,
       costo_reparacion,
       anticipo,
+      fecha_ingreso,
+      fecha_entrega_estimada,
       // Hijos
       verificaciones,
       fallas,
@@ -1059,32 +1061,33 @@ app.put('/ordenes-servicio/:id', verificarToken, async (req, res) => {
     } = req.body;
 
     // Manejar marca y tipo_equipo como en el POST
+    let finalMarcaId = marca_id;
+    let finalTipoEquipoId = tipo_equipo_id;
+
     if (marca && !marca_id) {
       const marcaResult = await client.query('SELECT id FROM marcas WHERE marca = $1', [marca]);
       if (marcaResult.rows.length > 0) {
-        marca_id = marcaResult.rows[0].id;
+        finalMarcaId = marcaResult.rows[0].id;
       } else {
         const nuevaMarca = await client.query('INSERT INTO marcas (marca) VALUES ($1) RETURNING id', [marca]);
-        marca_id = nuevaMarca.rows[0].id;
+        finalMarcaId = nuevaMarca.rows[0].id;
       }
     }
 
     if (tipo_equipo && !tipo_equipo_id) {
       const tipoResult = await client.query('SELECT id FROM tipos_equipo WHERE nombre = $1', [tipo_equipo]);
       if (tipoResult.rows.length > 0) {
-        tipo_equipo_id = tipoResult.rows[0].id;
+        finalTipoEquipoId = tipoResult.rows[0].id;
       } else {
         const nuevoTipo = await client.query('INSERT INTO tipos_equipo (nombre) VALUES ($1) RETURNING id', [tipo_equipo]);
-        tipo_equipo_id = nuevoTipo.rows[0].id;
+        finalTipoEquipoId = nuevoTipo.rows[0].id;
       }
     }
 
-    // Convertir valores numéricos
-    const costoReparacionNum = parseFloat(costo_reparacion) || 0;
-    const anticipoNum = parseFloat(anticipo) || 0;
-    const total = costoReparacionNum - anticipoNum;
+    // Calcular total como en el POST
+    const total = (costo_reparacion || 0) - (anticipo || 0);
 
-    // Actualizar orden principal
+    // Actualizar orden principal usando la misma estructura que el POST
     const updateOrdenText = `
       UPDATE ordenes_servicio SET
         codigo_orden = COALESCE($1, codigo_orden),
@@ -1103,89 +1106,60 @@ app.put('/ordenes-servicio/:id', verificarToken, async (req, res) => {
         garantia_id = COALESCE($14, garantia_id),
         costo_reparacion = COALESCE($15, costo_reparacion),
         anticipo = COALESCE($16, anticipo),
-        total = $17
-      WHERE id = $18
+        fecha_ingreso = COALESCE($17, fecha_ingreso),
+        fecha_entrega_estimada = COALESCE($18, fecha_entrega_estimada),
+        total = $19
+      WHERE id = $20
       RETURNING *
     `;
 
-    const updateValues = [
+    const result = await client.query(updateOrdenText, [
       codigo_orden, tecnico_id, cliente_nombre, cliente_telefono, cliente_correo,
-      marca_id, modelo, tipo_equipo_id, imei_serie, patron_contrasena,
-      estado_equipo, diagnostico, observaciones, garantia_id, costoReparacionNum,
-      anticipoNum, total, id
-    ];
-    
-    const result = await client.query(updateOrdenText, updateValues);
+      finalMarcaId, modelo, finalTipoEquipoId, imei_serie, patron_contrasena,
+      estado_equipo, diagnostico, observaciones, garantia_id, costo_reparacion || 0, anticipo || 0, fecha_ingreso, fecha_entrega_estimada, total, id
+    ]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Orden de servicio no encontrada' });
     }
 
-    // Actualizar verificaciones si se envían
+    // Actualizar verificaciones usando la misma lógica que el POST
     if (Array.isArray(verificaciones)) {
       // Eliminar verificaciones existentes
       await client.query('DELETE FROM verificaciones_equipo WHERE orden_id = $1', [id]);
       
-      // Crear un objeto para mapear las verificaciones
-      const verificacionMap = {
-        'Enciende': false,
-        'Bandeja SIM': false,
-        'Golpes visibles': false,
-        'Humedad': false,
-        'Altavoz': false,
-        'Micrófono': false,
-        'Auricular': false,
-        'Otros': false
-      };
-      
-      // Mapear las verificaciones recibidas
-      verificaciones.forEach(v => {
-        if (verificacionMap.hasOwnProperty(v.tipo)) {
-          verificacionMap[v.tipo] = v.estado || false;
-        }
-      });
-      
-      // Insertar la verificación mapeada (una sola fila por orden)
-      const verificacionValues = [
-        id, 
-        verificacionMap['Enciende'],
-        verificacionMap['Bandeja SIM'],
-        verificacionMap['Golpes visibles'],
-        verificacionMap['Humedad'],
-        verificacionMap['Altavoz'],
-        verificacionMap['Micrófono'],
-        verificacionMap['Auricular'],
-        verificacionMap['Otros']
-      ];
-      
-      await client.query(
-        `INSERT INTO verificaciones_equipo 
-          (orden_id, enciende, bandeja_sim, golpes, humedad, altavoz, microfono, auricular, otros)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-        verificacionValues
-      );
-    }
-
-    // Actualizar fallas si se envían
-    if (Array.isArray(fallas)) {
-      // Eliminar fallas existentes
-      await client.query('DELETE FROM fallas WHERE orden_id = $1', [id]);
-      
-      // Insertar nuevas fallas
-      for (const f of fallas) {
+      // Insertar nuevas verificaciones como en el POST
+      for (const v of verificaciones) {
         await client.query(
-          `INSERT INTO fallas (orden_id, descripcion, prioridad, estado) VALUES ($1,$2,$3,$4)`,
-          [id, f.descripcion, f.prioridad || 'MEDIA', f.estado || 'PENDIENTE']
+          `INSERT INTO verificaciones_equipo 
+            (orden_id, enciende, bandeja_sim, golpes, humedad, altavoz, microfono, auricular, otros)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [id, v.enciende || false, v.bandeja_sim || false, v.golpes || false, v.humedad || false,
+           v.altavoz || false, v.microfono || false, v.auricular || false, v.otros || false]
         );
       }
     }
 
-    // Actualizar repuestos si se envían
+    // Actualizar fallas usando la misma lógica que el POST
+    if (Array.isArray(fallas)) {
+      // Eliminar fallas existentes
+      await client.query('DELETE FROM fallas WHERE orden_id = $1', [id]);
+      
+      // Insertar nuevas fallas como en el POST
+      for (const f of fallas) {
+        await client.query(
+          `INSERT INTO fallas (orden_id, descripcion) VALUES ($1,$2)`,
+          [id, f.descripcion]
+        );
+      }
+    }
+
+    // Actualizar repuestos usando la misma lógica que el POST
     if (Array.isArray(repuestos)) {
       // Eliminar repuestos existentes
       await client.query('DELETE FROM orden_repuestos WHERE orden_id = $1', [id]);
       
-      // Insertar nuevos repuestos
+      // Insertar nuevos repuestos como en el POST
       for (const r of repuestos) {
         await client.query(
           `INSERT INTO orden_repuestos (orden_id, repuesto_id, cantidad, precio_unitario) VALUES ($1,$2,$3,$4)`,
@@ -1194,12 +1168,12 @@ app.put('/ordenes-servicio/:id', verificarToken, async (req, res) => {
       }
     }
 
-    // Actualizar fotos si se envían
+    // Actualizar fotos usando la misma lógica que el POST
     if (Array.isArray(fotos)) {
       // Eliminar fotos existentes
       await client.query('DELETE FROM fotos_orden WHERE orden_id = $1', [id]);
       
-      // Insertar nuevas fotos
+      // Insertar nuevas fotos como en el POST
       for (const f of fotos) {
         await client.query(
           `INSERT INTO fotos_orden (orden_id, ruta_foto) VALUES ($1,$2)`,
