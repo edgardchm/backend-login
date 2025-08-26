@@ -810,15 +810,17 @@ app.post('/ordenes-servicio', verificarToken, async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    const {
+    let {
       codigo_orden,
       tecnico_id,
       cliente_nombre,
       cliente_telefono,
       cliente_correo,
       marca_id,
+      marca, // Agregar soporte para nombre de marca
       modelo,
       tipo_equipo_id,
+      tipo_equipo, // Agregar soporte para nombre de tipo
       imei_serie,
       patron_contrasena,
       estado_equipo,
@@ -833,6 +835,30 @@ app.post('/ordenes-servicio', verificarToken, async (req, res) => {
       repuestos,
       fotos
     } = req.body;
+
+    // Si se envía nombre de marca en lugar de ID, buscar el ID
+    if (marca && !marca_id) {
+      const marcaResult = await client.query('SELECT id FROM marcas WHERE marca = $1', [marca]);
+      if (marcaResult.rows.length > 0) {
+        marca_id = marcaResult.rows[0].id;
+      } else {
+        // Si no existe la marca, crearla
+        const nuevaMarca = await client.query('INSERT INTO marcas (marca) VALUES ($1) RETURNING id', [marca]);
+        marca_id = nuevaMarca.rows[0].id;
+      }
+    }
+
+    // Si se envía nombre de tipo en lugar de ID, buscar el ID
+    if (tipo_equipo && !tipo_equipo_id) {
+      const tipoResult = await client.query('SELECT id FROM tipos_equipo WHERE nombre = $1', [tipo_equipo]);
+      if (tipoResult.rows.length > 0) {
+        tipo_equipo_id = tipoResult.rows[0].id;
+      } else {
+        // Si no existe el tipo, crearlo
+        const nuevoTipo = await client.query('INSERT INTO tipos_equipo (nombre) VALUES ($1) RETURNING id', [tipo_equipo]);
+        tipo_equipo_id = nuevoTipo.rows[0].id;
+      }
+    }
 
     // Insert orden principal
     const insertOrdenText = `
