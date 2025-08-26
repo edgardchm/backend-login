@@ -303,7 +303,6 @@ app.get('/productos/:busqueda', verificarToken, async (req, res) => {
           ELSE 3
         END,
         p.nombre
-      LIMIT 10
     `;
 
     const searchPattern = `%${busqueda}%`;
