@@ -1123,16 +1123,41 @@ app.put('/ordenes-servicio/:id', verificarToken, async (req, res) => {
       // Eliminar verificaciones existentes
       await client.query('DELETE FROM verificaciones_equipo WHERE orden_id = $1', [id]);
       
-      // Insertar nuevas verificaciones
-      for (const v of verificaciones) {
-        await client.query(
-          `INSERT INTO verificaciones_equipo 
-            (orden_id, enciende, bandeja_sim, golpes, humedad, altavoz, microfono, auricular, otros)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-          [id, v.enciende || false, v.bandeja_sim || false, v.golpes || false, v.humedad || false,
-           v.altavoz || false, v.microfono || false, v.auricular || false, v.otros || false]
-        );
-      }
+      // Crear un objeto para mapear las verificaciones
+      const verificacionMap = {
+        'Enciende': false,
+        'Bandeja SIM': false,
+        'Golpes visibles': false,
+        'Humedad': false,
+        'Altavoz': false,
+        'Micrófono': false,
+        'Auricular': false,
+        'Otros': false
+      };
+      
+      // Mapear las verificaciones recibidas
+      verificaciones.forEach(v => {
+        if (verificacionMap.hasOwnProperty(v.tipo)) {
+          verificacionMap[v.tipo] = v.estado || false;
+        }
+      });
+      
+      // Insertar la verificación mapeada (una sola fila por orden)
+      await client.query(
+        `INSERT INTO verificaciones_equipo 
+          (orden_id, enciende, bandeja_sim, golpes, humedad, altavoz, microfono, auricular, otros)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [id, 
+         verificacionMap['Enciende'],
+         verificacionMap['Bandeja SIM'],
+         verificacionMap['Golpes visibles'],
+         verificacionMap['Humedad'],
+         verificacionMap['Altavoz'],
+         verificacionMap['Micrófono'],
+         verificacionMap['Auricular'],
+         verificacionMap['Otros']
+        ]
+      );
     }
 
     // Actualizar fallas si se envían
