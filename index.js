@@ -932,6 +932,242 @@ app.post('/ordenes-servicio', verificarToken, async (req, res) => {
   }
 });
 
+// Endpoint para obtener una orden específica por ID
+app.get('/ordenes-servicio/:id', verificarToken, async (req, res) => {
+  const { id } = req.params;
+  
+  try {
+    // Obtener la orden principal
+    const ordenResult = await db.query(`
+      SELECT 
+          os.*,
+          te.nombre AS tipo_equipo_nombre,
+          m.marca AS marca_nombre,
+          u.nombre AS tecnico_nombre
+      FROM ordenes_servicio os
+      LEFT JOIN tipos_equipo te ON te.id = os.tipo_equipo_id
+      LEFT JOIN marcas m ON m.id = os.marca_id
+      LEFT JOIN usuarios u ON u.id = os.tecnico_id
+      WHERE os.id = $1
+    `, [id]);
+
+    if (ordenResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Orden de servicio no encontrada' });
+    }
+
+    const orden = ordenResult.rows[0];
+
+    // Obtener verificaciones del equipo
+    const verificacionesResult = await db.query(`
+      SELECT * FROM verificaciones_equipo WHERE orden_id = $1
+    `, [id]);
+
+    // Obtener fallas reportadas
+    const fallasResult = await db.query(`
+      SELECT * FROM fallas WHERE orden_id = $1 ORDER BY id
+    `, [id]);
+
+    // Obtener repuestos utilizados
+    const repuestosResult = await db.query(`
+      SELECT orp.*, p.nombre AS repuesto_nombre, p.sku
+      FROM orden_repuestos orp
+      LEFT JOIN productos p ON orp.repuesto_id = p.id
+      WHERE orp.orden_id = $1
+    `, [id]);
+
+    // Obtener fotos de la orden
+    const fotosResult = await db.query(`
+      SELECT * FROM fotos_orden WHERE orden_id = $1
+    `, [id]);
+
+    res.json({
+      orden: {
+        ...orden,
+        tipo_equipo: orden.tipo_equipo_nombre,
+        marca: orden.marca_nombre,
+        tecnico: orden.tecnico_nombre
+      },
+      verificaciones: verificacionesResult.rows,
+      fallas: fallasResult.rows,
+      repuestos: repuestosResult.rows,
+      fotos: fotosResult.rows
+    });
+
+  } catch (error) {
+    console.error('Error obteniendo orden:', error);
+    res.status(500).json({ error: 'Error al obtener la orden de servicio' });
+  }
+});
+
+// Endpoint para actualizar una orden existente
+app.put('/ordenes-servicio/:id', verificarToken, async (req, res) => {
+  const { id } = req.params;
+  const client = await db.connect();
+  
+  try {
+    await client.query('BEGIN');
+
+    const {
+      codigo_orden,
+      tecnico_id,
+      cliente_nombre,
+      cliente_telefono,
+      cliente_correo,
+      marca_id,
+      marca,
+      modelo,
+      tipo_equipo_id,
+      tipo_equipo,
+      imei_serie,
+      patron_contrasena,
+      estado_equipo,
+      diagnostico,
+      observaciones,
+      garantia_id,
+      costo_reparacion,
+      anticipo,
+      fecha_entrega_estimada,
+      // Hijos
+      verificaciones,
+      fallas,
+      repuestos,
+      fotos
+    } = req.body;
+
+    // Manejar marca y tipo_equipo como en el POST
+    if (marca && !marca_id) {
+      const marcaResult = await client.query('SELECT id FROM marcas WHERE marca = $1', [marca]);
+      if (marcaResult.rows.length > 0) {
+        marca_id = marcaResult.rows[0].id;
+      } else {
+        const nuevaMarca = await client.query('INSERT INTO marcas (marca) VALUES ($1) RETURNING id', [marca]);
+        marca_id = nuevaMarca.rows[0].id;
+      }
+    }
+
+    if (tipo_equipo && !tipo_equipo_id) {
+      const tipoResult = await client.query('SELECT id FROM tipos_equipo WHERE nombre = $1', [tipo_equipo]);
+      if (tipoResult.rows.length > 0) {
+        tipo_equipo_id = tipoResult.rows[0].id;
+      } else {
+        const nuevoTipo = await client.query('INSERT INTO tipos_equipo (nombre) VALUES ($1) RETURNING id', [tipo_equipo]);
+        tipo_equipo_id = nuevoTipo.rows[0].id;
+      }
+    }
+
+    const total = (costo_reparacion || 0) - (anticipo || 0);
+
+    // Actualizar orden principal
+    const updateOrdenText = `
+      UPDATE ordenes_servicio SET
+        codigo_orden = COALESCE($1, codigo_orden),
+        tecnico_id = COALESCE($2, tecnico_id),
+        cliente_nombre = COALESCE($3, cliente_nombre),
+        cliente_telefono = COALESCE($4, cliente_telefono),
+        cliente_correo = COALESCE($5, cliente_correo),
+        marca_id = COALESCE($6, marca_id),
+        modelo = COALESCE($7, modelo),
+        tipo_equipo_id = COALESCE($8, tipo_equipo_id),
+        imei_serie = COALESCE($9, imei_serie),
+        patron_contrasena = COALESCE($10, patron_contrasena),
+        estado_equipo = COALESCE($11, estado_equipo),
+        diagnostico = COALESCE($12, diagnostico),
+        observaciones = COALESCE($13, observaciones),
+        garantia_id = COALESCE($14, garantia_id),
+        costo_reparacion = COALESCE($15, costo_reparacion),
+        anticipo = COALESCE($16, anticipo),
+        fecha_entrega_estimada = COALESCE($17, fecha_entrega_estimada),
+        total = $18
+      WHERE id = $19
+      RETURNING *
+    `;
+
+    const result = await client.query(updateOrdenText, [
+      codigo_orden, tecnico_id, cliente_nombre, cliente_telefono, cliente_correo,
+      marca_id, modelo, tipo_equipo_id, imei_serie, patron_contrasena,
+      estado_equipo, diagnostico, observaciones, garantia_id, costo_reparacion,
+      anticipo, fecha_entrega_estimada, total, id
+    ]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Orden de servicio no encontrada' });
+    }
+
+    // Actualizar verificaciones si se envían
+    if (Array.isArray(verificaciones)) {
+      // Eliminar verificaciones existentes
+      await client.query('DELETE FROM verificaciones_equipo WHERE orden_id = $1', [id]);
+      
+      // Insertar nuevas verificaciones
+      for (const v of verificaciones) {
+        await client.query(
+          `INSERT INTO verificaciones_equipo 
+            (orden_id, enciende, bandeja_sim, golpes, humedad, altavoz, microfono, auricular, otros)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [id, v.enciende || false, v.bandeja_sim || false, v.golpes || false, v.humedad || false,
+           v.altavoz || false, v.microfono || false, v.auricular || false, v.otros || false]
+        );
+      }
+    }
+
+    // Actualizar fallas si se envían
+    if (Array.isArray(fallas)) {
+      // Eliminar fallas existentes
+      await client.query('DELETE FROM fallas WHERE orden_id = $1', [id]);
+      
+      // Insertar nuevas fallas
+      for (const f of fallas) {
+        await client.query(
+          `INSERT INTO fallas (orden_id, descripcion, prioridad, estado) VALUES ($1,$2,$3,$4)`,
+          [id, f.descripcion, f.prioridad || 'MEDIA', f.estado || 'PENDIENTE']
+        );
+      }
+    }
+
+    // Actualizar repuestos si se envían
+    if (Array.isArray(repuestos)) {
+      // Eliminar repuestos existentes
+      await client.query('DELETE FROM orden_repuestos WHERE orden_id = $1', [id]);
+      
+      // Insertar nuevos repuestos
+      for (const r of repuestos) {
+        await client.query(
+          `INSERT INTO orden_repuestos (orden_id, repuesto_id, cantidad, precio_unitario) VALUES ($1,$2,$3,$4)`,
+          [id, r.repuesto_id, r.cantidad, r.precio_unitario]
+        );
+      }
+    }
+
+    // Actualizar fotos si se envían
+    if (Array.isArray(fotos)) {
+      // Eliminar fotos existentes
+      await client.query('DELETE FROM fotos_orden WHERE orden_id = $1', [id]);
+      
+      // Insertar nuevas fotos
+      for (const f of fotos) {
+        await client.query(
+          `INSERT INTO fotos_orden (orden_id, ruta_foto) VALUES ($1,$2)`,
+          [id, f.ruta_foto]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+    
+    res.json({ 
+      message: 'Orden de servicio actualizada exitosamente',
+      orden: result.rows[0]
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error actualizando orden:', error);
+    res.status(500).json({ error: 'Error al actualizar la orden de servicio' });
+  } finally {
+    client.release();
+  }
+});
+
 // Endpoint para actualizar tipo y marca de una orden existente
 app.patch('/ordenes-servicio/:id/tipo-marca', verificarToken, async (req, res) => {
   const { id } = req.params;
