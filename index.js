@@ -774,7 +774,6 @@ app.get('/ordenes-servicio', verificarToken, async (req, res) => {
           COALESCE(m.marca, 'Sin marca') AS marca,
           os.modelo,
           os.estado_equipo AS estado,
-          os.estado AS estado_reparacion,
           os.imei_serie,
           os.diagnostico,
           os.total,
@@ -787,12 +786,37 @@ app.get('/ordenes-servicio', verificarToken, async (req, res) => {
       LIMIT $1 OFFSET $2
     `, [parseInt(limite), offset]);
 
+    // Obtener el estado de reparación de las fallas para cada orden
+    const ordenesConEstado = await Promise.all(
+      result.rows.map(async (orden) => {
+        try {
+          const fallasResult = await db.query(`
+            SELECT estado FROM fallas 
+            WHERE orden_id = $1 
+            ORDER BY id DESC 
+            LIMIT 1
+          `, [orden.id_orden]);
+          
+          return {
+            ...orden,
+            estado_reparacion: fallasResult.rows.length > 0 ? fallasResult.rows[0].estado : 'PENDIENTE'
+          };
+        } catch (error) {
+          console.error(`Error obteniendo estado para orden ${orden.id_orden}:`, error);
+          return {
+            ...orden,
+            estado_reparacion: 'PENDIENTE'
+          };
+        }
+      })
+    );
+
     // Query para contar total de registros
     const countResult = await db.query('SELECT COUNT(*) as total FROM ordenes_servicio');
     const totalRegistros = parseInt(countResult.rows[0].total);
 
     res.json({
-      ordenes: result.rows,
+      ordenes: ordenesConEstado,
       paginacion: {
         pagina: parseInt(pagina),
         limite: parseInt(limite),
