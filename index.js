@@ -736,7 +736,21 @@ app.get('/ordenes-servicio', verificarToken, async (req, res) => {
     const { pagina = 1, limite = 20 } = req.query;
     const offset = (parseInt(pagina) - 1) * parseInt(limite);
     
-    // Query principal con paginación
+    // Primero, vamos a ver qué hay en la tabla ordenes_servicio
+    const debugResult = await db.query(`
+      SELECT 
+          os.id,
+          os.codigo_orden,
+          os.tipo_equipo_id,
+          os.marca_id,
+          os.cliente_nombre
+      FROM ordenes_servicio os
+      LIMIT 5
+    `);
+    
+    console.log('DEBUG - Órdenes encontradas:', debugResult.rows);
+    
+    // Query principal con paginación - usando LEFT JOIN para debug
     const result = await db.query(`
       SELECT 
           os.id AS id_orden,
@@ -745,8 +759,8 @@ app.get('/ordenes-servicio', verificarToken, async (req, res) => {
           os.cliente_nombre AS cliente,
           os.cliente_telefono,
           os.cliente_correo,
-          te.nombre AS tipo_equipo,
-          m.marca AS marca,
+          COALESCE(te.nombre, 'Sin tipo') AS tipo_equipo,
+          COALESCE(m.marca, 'Sin marca') AS marca,
           os.modelo,
           os.estado_equipo AS estado,
           os.imei_serie,
@@ -755,8 +769,8 @@ app.get('/ordenes-servicio', verificarToken, async (req, res) => {
           os.anticipo,
           os.costo_reparacion
       FROM ordenes_servicio os
-      JOIN tipos_equipo te ON te.id = os.tipo_equipo_id
-      JOIN marcas m ON m.id = os.marca_id
+      LEFT JOIN tipos_equipo te ON te.id = os.tipo_equipo_id
+      LEFT JOIN marcas m ON m.id = os.marca_id
       ORDER BY os.fecha_ingreso DESC
       LIMIT $1 OFFSET $2
     `, [parseInt(limite), offset]);
@@ -772,6 +786,10 @@ app.get('/ordenes-servicio', verificarToken, async (req, res) => {
         limite: parseInt(limite),
         total: totalRegistros,
         totalPaginas: Math.ceil(totalRegistros / parseInt(limite))
+      },
+      debug: {
+        ordenesEncontradas: debugResult.rows,
+        queryEjecutada: 'LEFT JOIN para incluir órdenes sin tipo o marca'
       }
     });
   } catch (err) {
