@@ -1051,8 +1051,6 @@ app.put('/ordenes-servicio/:id', verificarToken, async (req, res) => {
       garantia_id,
       costo_reparacion,
       anticipo,
-      fecha_ingreso,
-      fecha_entrega_estimada,
       // Hijos
       verificaciones,
       fallas,
@@ -1106,17 +1104,15 @@ app.put('/ordenes-servicio/:id', verificarToken, async (req, res) => {
         garantia_id = COALESCE($14, garantia_id),
         costo_reparacion = COALESCE($15, costo_reparacion),
         anticipo = COALESCE($16, anticipo),
-        fecha_ingreso = COALESCE($17, fecha_ingreso),
-        fecha_entrega_estimada = COALESCE($18, fecha_entrega_estimada),
-        total = $19
-      WHERE id = $20
+        total = $17
+      WHERE id = $18
       RETURNING *
     `;
 
     const result = await client.query(updateOrdenText, [
       codigo_orden, tecnico_id, cliente_nombre, cliente_telefono, cliente_correo,
       finalMarcaId, modelo, finalTipoEquipoId, imei_serie, patron_contrasena,
-      estado_equipo, diagnostico, observaciones, garantia_id, costo_reparacion || 0, anticipo || 0, fecha_ingreso, fecha_entrega_estimada, total, id
+      estado_equipo, diagnostico, observaciones, garantia_id, costo_reparacion || 0, anticipo || 0, total, id
     ]);
 
     if (result.rows.length === 0) {
