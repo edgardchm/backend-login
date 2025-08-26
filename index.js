@@ -733,6 +733,10 @@ app.delete('/usuarios/:id', verificarToken, async (req, res) => {
 // =================== ÓRDENES DE SERVICIO ===================
 app.get('/ordenes-servicio', verificarToken, async (req, res) => {
   try {
+    const { pagina = 1, limite = 20 } = req.query;
+    const offset = (parseInt(pagina) - 1) * parseInt(limite);
+    
+    // Query principal con paginación
     const result = await db.query(`
       SELECT 
           os.id AS id_orden,
@@ -754,9 +758,22 @@ app.get('/ordenes-servicio', verificarToken, async (req, res) => {
       JOIN tipos_equipo te ON te.id = os.tipo_equipo_id
       JOIN marcas m ON m.id = os.marca_id
       ORDER BY os.fecha_ingreso DESC
-    `);
+      LIMIT $1 OFFSET $2
+    `, [parseInt(limite), offset]);
 
-    res.json(result.rows);
+    // Query para contar total de registros
+    const countResult = await db.query('SELECT COUNT(*) as total FROM ordenes_servicio');
+    const totalRegistros = parseInt(countResult.rows[0].total);
+
+    res.json({
+      ordenes: result.rows,
+      paginacion: {
+        pagina: parseInt(pagina),
+        limite: parseInt(limite),
+        total: totalRegistros,
+        totalPaginas: Math.ceil(totalRegistros / parseInt(limite))
+      }
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al obtener órdenes de servicio' });
