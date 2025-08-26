@@ -761,21 +761,7 @@ app.get('/ordenes-servicio', verificarToken, async (req, res) => {
     const { pagina = 1, limite = 20 } = req.query;
     const offset = (parseInt(pagina) - 1) * parseInt(limite);
     
-    // Primero, vamos a ver qué hay en la tabla ordenes_servicio
-    const debugResult = await db.query(`
-      SELECT 
-          os.id,
-          os.codigo_orden,
-          os.tipo_equipo_id,
-          os.marca_id,
-          os.cliente_nombre
-      FROM ordenes_servicio os
-      LIMIT 5
-    `);
-    
-    console.log('DEBUG - Órdenes encontradas:', debugResult.rows);
-    
-    // Query principal con paginación - usando LEFT JOIN para debug
+    // Query principal con paginación
     const result = await db.query(`
       SELECT 
           os.id AS id_orden,
@@ -811,10 +797,6 @@ app.get('/ordenes-servicio', verificarToken, async (req, res) => {
         limite: parseInt(limite),
         total: totalRegistros,
         totalPaginas: Math.ceil(totalRegistros / parseInt(limite))
-      },
-      debug: {
-        ordenesEncontradas: debugResult.rows,
-        queryEjecutada: 'LEFT JOIN para incluir órdenes sin tipo o marca'
       }
     });
   } catch (err) {
@@ -948,6 +930,54 @@ app.patch('/ordenes-servicio/:id/tipo-marca', verificarToken, async (req, res) =
   } catch (error) {
     console.error('Error actualizando tipo y marca:', error);
     res.status(500).json({ error: 'Error al actualizar tipo y marca' });
+  }
+});
+
+// Endpoint para eliminar una orden de servicio
+app.delete('/ordenes-servicio/:id', verificarToken, async (req, res) => {
+  const { id } = req.params;
+  const client = await db.connect();
+  
+  try {
+    await client.query('BEGIN');
+
+    // Verificar que la orden existe
+    const ordenCheck = await client.query(
+      'SELECT id, codigo_orden FROM ordenes_servicio WHERE id = $1',
+      [id]
+    );
+
+    if (ordenCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Orden de servicio no encontrada' });
+    }
+
+    const orden = ordenCheck.rows[0];
+
+    // Eliminar registros relacionados en orden específico
+    await client.query('DELETE FROM verificaciones_equipo WHERE orden_id = $1', [id]);
+    await client.query('DELETE FROM fallas WHERE orden_id = $1', [id]);
+    await client.query('DELETE FROM orden_repuestos WHERE orden_id = $1', [id]);
+    await client.query('DELETE FROM fotos_orden WHERE orden_id = $1', [id]);
+    
+    // Finalmente eliminar la orden principal
+    await client.query('DELETE FROM ordenes_servicio WHERE id = $1', [id]);
+
+    await client.query('COMMIT');
+    
+    res.json({ 
+      message: 'Orden de servicio eliminada exitosamente',
+      ordenEliminada: {
+        id: orden.id,
+        codigo_orden: orden.codigo_orden
+      }
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error eliminando orden de servicio:', error);
+    res.status(500).json({ error: 'Error al eliminar la orden de servicio' });
+  } finally {
+    client.release();
   }
 });
 
