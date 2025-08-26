@@ -1153,10 +1153,22 @@ app.put('/ordenes-servicio/:id', verificarToken, async (req, res) => {
 
     // Si se envía estado_reparacion, actualizar el estado de las fallas existentes
     if (estado_reparacion) {
-      await client.query(
-        `UPDATE fallas SET estado = $1 WHERE orden_id = $2`,
-        [estado_reparacion, id]
-      );
+      // Primero verificar si hay fallas para esta orden
+      const fallasExistentes = await client.query('SELECT COUNT(*) FROM fallas WHERE orden_id = $1', [id]);
+      
+      if (parseInt(fallasExistentes.rows[0].count) > 0) {
+        // Si hay fallas, actualizar su estado
+        await client.query(
+          `UPDATE fallas SET estado = $1 WHERE orden_id = $2`,
+          [estado_reparacion, id]
+        );
+      } else {
+        // Si no hay fallas, crear una falla por defecto con el estado especificado
+        await client.query(
+          `INSERT INTO fallas (orden_id, descripcion, estado) VALUES ($1, $2, $3)`,
+          [id, 'Falla general', estado_reparacion]
+        );
+      }
     }
 
     // Actualizar repuestos usando la misma lógica que el POST
