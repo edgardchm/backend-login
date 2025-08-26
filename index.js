@@ -1032,7 +1032,7 @@ app.put('/ordenes-servicio/:id', verificarToken, async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    const {
+    let {
       codigo_orden,
       tecnico_id,
       cliente_nombre,
@@ -1061,30 +1061,22 @@ app.put('/ordenes-servicio/:id', verificarToken, async (req, res) => {
 
     // Manejar marca y tipo_equipo como en el POST
     if (marca && !marca_id) {
-      console.log('Buscando marca:', marca);
       const marcaResult = await client.query('SELECT id FROM marcas WHERE marca = $1', [marca]);
       if (marcaResult.rows.length > 0) {
         marca_id = marcaResult.rows[0].id;
-        console.log('Marca encontrada, ID:', marca_id);
       } else {
-        console.log('Creando nueva marca:', marca);
         const nuevaMarca = await client.query('INSERT INTO marcas (marca) VALUES ($1) RETURNING id', [marca]);
         marca_id = nuevaMarca.rows[0].id;
-        console.log('Nueva marca creada, ID:', marca_id);
       }
     }
 
     if (tipo_equipo && !tipo_equipo_id) {
-      console.log('Buscando tipo de equipo:', tipo_equipo);
       const tipoResult = await client.query('SELECT id FROM tipos_equipo WHERE nombre = $1', [tipo_equipo]);
       if (tipoResult.rows.length > 0) {
         tipo_equipo_id = tipoResult.rows[0].id;
-        console.log('Tipo de equipo encontrado, ID:', tipo_equipo_id);
       } else {
-        console.log('Creando nuevo tipo de equipo:', tipo_equipo);
         const nuevoTipo = await client.query('INSERT INTO tipos_equipo (nombre) VALUES ($1) RETURNING id', [tipo_equipo]);
         tipo_equipo_id = nuevoTipo.rows[0].id;
-        console.log('Nuevo tipo de equipo creado, ID:', tipo_equipo_id);
       }
     }
 
@@ -1092,10 +1084,6 @@ app.put('/ordenes-servicio/:id', verificarToken, async (req, res) => {
     const costoReparacionNum = parseFloat(costo_reparacion) || 0;
     const anticipoNum = parseFloat(anticipo) || 0;
     const total = costoReparacionNum - anticipoNum;
-    
-    console.log('Costo reparación:', costoReparacionNum);
-    console.log('Anticipo:', anticipoNum);
-    console.log('Total calculado:', total);
 
     // Actualizar orden principal
     const updateOrdenText = `
@@ -1121,8 +1109,6 @@ app.put('/ordenes-servicio/:id', verificarToken, async (req, res) => {
       WHERE id = $19
       RETURNING *
     `;
-    
-    console.log('Query de actualización:', updateOrdenText);
 
     const updateValues = [
       codigo_orden, tecnico_id, cliente_nombre, cliente_telefono, cliente_correo,
@@ -1130,8 +1116,6 @@ app.put('/ordenes-servicio/:id', verificarToken, async (req, res) => {
       estado_equipo, diagnostico, observaciones, garantia_id, costoReparacionNum,
       anticipoNum, fecha_entrega_estimada, total, id
     ];
-    
-    console.log('Valores para actualizar orden:', updateValues);
     
     const result = await client.query(updateOrdenText, updateValues);
 
@@ -1141,8 +1125,6 @@ app.put('/ordenes-servicio/:id', verificarToken, async (req, res) => {
 
     // Actualizar verificaciones si se envían
     if (Array.isArray(verificaciones)) {
-      console.log('Procesando verificaciones:', verificaciones);
-      
       // Eliminar verificaciones existentes
       await client.query('DELETE FROM verificaciones_equipo WHERE orden_id = $1', [id]);
       
@@ -1165,8 +1147,6 @@ app.put('/ordenes-servicio/:id', verificarToken, async (req, res) => {
         }
       });
       
-      console.log('Verificaciones mapeadas:', verificacionMap);
-      
       // Insertar la verificación mapeada (una sola fila por orden)
       const verificacionValues = [
         id, 
@@ -1180,22 +1160,16 @@ app.put('/ordenes-servicio/:id', verificarToken, async (req, res) => {
         verificacionMap['Otros']
       ];
       
-      console.log('Valores a insertar en verificaciones:', verificacionValues);
-      
       await client.query(
         `INSERT INTO verificaciones_equipo 
           (orden_id, enciende, bandeja_sim, golpes, humedad, altavoz, microfono, auricular, otros)
           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
         verificacionValues
       );
-      
-      console.log('Verificaciones insertadas correctamente');
     }
 
     // Actualizar fallas si se envían
     if (Array.isArray(fallas)) {
-      console.log('Procesando fallas:', fallas);
-      
       // Eliminar fallas existentes
       await client.query('DELETE FROM fallas WHERE orden_id = $1', [id]);
       
@@ -1206,8 +1180,6 @@ app.put('/ordenes-servicio/:id', verificarToken, async (req, res) => {
           [id, f.descripcion, f.prioridad || 'MEDIA', f.estado || 'PENDIENTE']
         );
       }
-      
-      console.log('Fallas procesadas correctamente');
     }
 
     // Actualizar repuestos si se envían
@@ -1248,12 +1220,9 @@ app.put('/ordenes-servicio/:id', verificarToken, async (req, res) => {
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Error actualizando orden:', error);
-    console.error('Stack trace:', error.stack);
-    console.error('Body recibido:', req.body);
     res.status(500).json({ 
       error: 'Error al actualizar la orden de servicio',
-      detalle: error.message,
-      stack: error.stack 
+      detalle: error.message
     });
   } finally {
     client.release();
