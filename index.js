@@ -1005,12 +1005,25 @@ app.get('/ordenes-servicio/:id', verificarToken, async (req, res) => {
       SELECT * FROM fotos_orden WHERE orden_id = $1
     `, [id]);
 
+    // Calcular estado_reparacion desde las fallas (igual que en el endpoint de listar)
+    let estadoReparacion = 'PENDIENTE';
+    if (fallasResult.rows.length > 0) {
+      // Buscar la primera falla con estado definido
+      const fallaConEstado = fallasResult.rows.find(f => f.estado && f.estado !== 'PENDIENTE');
+      if (fallaConEstado) {
+        estadoReparacion = fallaConEstado.estado;
+      } else {
+        estadoReparacion = fallasResult.rows[0].estado || 'PENDIENTE';
+      }
+    }
+
     res.json({
       orden: {
         ...orden,
         tipo_equipo: orden.tipo_equipo_nombre,
         marca: orden.marca_nombre,
-        tecnico: orden.tecnico_nombre
+        tecnico: orden.tecnico_nombre,
+        estado_reparacion: estadoReparacion
       },
       verificaciones: verificacionesResult.rows,
       fallas: fallasResult.rows,
@@ -1051,7 +1064,6 @@ app.put('/ordenes-servicio/:id', verificarToken, async (req, res) => {
       garantia_id,
       costo_reparacion,
       anticipo,
-      estado_reparacion,
       // Hijos
       verificaciones,
       fallas,
@@ -1151,25 +1163,7 @@ app.put('/ordenes-servicio/:id', verificarToken, async (req, res) => {
       }
     }
 
-    // Si se envía estado_reparacion, actualizar el estado de las fallas existentes
-    if (estado_reparacion) {
-      // Primero verificar si hay fallas para esta orden
-      const fallasExistentes = await client.query('SELECT COUNT(*) FROM fallas WHERE orden_id = $1', [id]);
-      
-      if (parseInt(fallasExistentes.rows[0].count) > 0) {
-        // Si hay fallas, actualizar su estado
-        await client.query(
-          `UPDATE fallas SET estado = $1 WHERE orden_id = $2`,
-          [estado_reparacion, id]
-        );
-      } else {
-        // Si no hay fallas, crear una falla por defecto con el estado especificado
-        await client.query(
-          `INSERT INTO fallas (orden_id, descripcion, estado) VALUES ($1, $2, $3)`,
-          [id, 'Falla general', estado_reparacion]
-        );
-      }
-    }
+
 
     // Actualizar repuestos usando la misma lógica que el POST
     if (Array.isArray(repuestos)) {
@@ -1211,6 +1205,63 @@ app.put('/ordenes-servicio/:id', verificarToken, async (req, res) => {
     console.error('Error actualizando orden:', error);
     res.status(500).json({ 
       error: 'Error al actualizar la orden de servicio',
+      detalle: error.message
+    });
+  } finally {
+    client.release();
+  }
+});
+
+// Endpoint para actualizar solo el estado de reparación
+app.patch('/ordenes-servicio/:id/estado-reparacion', verificarToken, async (req, res) => {
+  const { id } = req.params;
+  const { estado_reparacion } = req.body;
+  
+  if (!estado_reparacion) {
+    return res.status(400).json({ error: 'El campo estado_reparacion es requerido' });
+  }
+
+  const client = await db.connect();
+  
+  try {
+    await client.query('BEGIN');
+
+    // Verificar si la orden existe
+    const ordenResult = await client.query('SELECT id FROM ordenes_servicio WHERE id = $1', [id]);
+    if (ordenResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Orden no encontrada' });
+    }
+
+    // Verificar si hay fallas para esta orden
+    const fallasExistentes = await client.query('SELECT COUNT(*) FROM fallas WHERE orden_id = $1', [id]);
+    
+    if (parseInt(fallasExistentes.rows[0].count) > 0) {
+      // Si hay fallas, actualizar su estado
+      await client.query(
+        `UPDATE fallas SET estado = $1 WHERE orden_id = $2`,
+        [estado_reparacion, id]
+      );
+    } else {
+      // Si no hay fallas, crear una falla por defecto con el estado especificado
+      await client.query(
+        `INSERT INTO fallas (orden_id, descripcion, estado) VALUES ($1, $2, $3)`,
+        [id, 'Falla general', estado_reparacion]
+      );
+    }
+
+    await client.query('COMMIT');
+    
+    res.json({ 
+      message: 'Estado de reparación actualizado correctamente',
+      orden_id: id,
+      estado_reparacion: estado_reparacion
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error actualizando estado de reparación:', error);
+    res.status(500).json({ 
+      error: 'Error al actualizar el estado de reparación',
       detalle: error.message
     });
   } finally {
