@@ -774,6 +774,7 @@ app.get('/ordenes-servicio', verificarToken, async (req, res) => {
           COALESCE(m.marca, 'Sin marca') AS marca,
           os.modelo,
           os.estado_equipo AS estado,
+          os.estado AS estado_reparacion,
           os.imei_serie,
           os.diagnostico,
           os.total,
