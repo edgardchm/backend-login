@@ -2278,3 +2278,33 @@ app.get('/productos/test/estructura', verificarToken, async (req, res) => {
   }
 });
 
+// Endpoint simple para ver qué columnas tiene la tabla productos
+app.get('/productos/test/columnas', verificarToken, async (req, res) => {
+  try {
+    // Ver solo las columnas que existen
+    const query = 'SELECT * FROM productos LIMIT 1';
+    const result = await db.query(query);
+    
+    if (result.rows.length > 0) {
+      const columnas = Object.keys(result.rows[0]);
+      res.json({
+        columnas_disponibles: columnas,
+        ejemplo_producto: result.rows[0],
+        mensaje: 'Columnas encontradas en la tabla productos'
+      });
+    } else {
+      res.json({
+        columnas_disponibles: [],
+        mensaje: 'La tabla productos está vacía'
+      });
+    }
+    
+  } catch (error) {
+    console.error('Error verificando columnas:', error);
+    res.status(500).json({ 
+      error: 'Error verificando columnas',
+      detalle: error.message
+    });
+  }
+});
+
