@@ -329,9 +329,9 @@ app.get('/productos', verificarToken, async (req, res) => {
 
     // Filtro de búsqueda
     if (busqueda) {
-      whereConditions.push(`(p.nombre ILIKE $${paramCount} OR p.sku ILIKE $${paramCount})`);
-      queryParams.push(`%${busqueda}%`);
-      paramCount++;
+      whereConditions.push(`(p.nombre ILIKE $${paramCount} OR p.sku ILIKE $${paramCount} OR p.sku = $${paramCount + 1})`);
+      queryParams.push(`%${busqueda}%`, busqueda);
+      paramCount += 2;
     }
 
     // Filtro por marca
@@ -377,7 +377,9 @@ app.get('/productos', verificarToken, async (req, res) => {
       LEFT JOIN marcas m ON p.marca_id = m.id
       LEFT JOIN tipos_producto t ON p.tipo_id = t.id
       ${whereClause}
-      ORDER BY p.${ordenar_por} ${orden}
+      ORDER BY 
+        ${busqueda ? `CASE WHEN p.sku = '${busqueda}' THEN 1 WHEN p.sku LIKE '%${busqueda}%' THEN 2 ELSE 3 END,` : ''}
+        p.${ordenar_por} ${orden}
       LIMIT $${paramCount} OFFSET $${paramCount + 1}
     `;
 
@@ -757,9 +759,18 @@ app.get('/productos/buscar/:busqueda', verificarToken, async (req, res) => {
 
   try {
     const query = `
-      SELECT p.*, 
-             m.marca AS marca, 
-             t.nombre AS tipo
+      SELECT 
+        p.id,
+        p.nombre,
+        p.sku,
+        p.precio,
+        p.precio_mayor,
+        p.precio_cliente,
+        p.stock,
+        p.fecha_creacion,
+        p.fecha_actualizacion,
+        m.marca AS marca, 
+        t.nombre AS tipo
       FROM productos p
       LEFT JOIN marcas m ON p.marca_id = m.id
       LEFT JOIN tipos_producto t ON p.tipo_id = t.id
