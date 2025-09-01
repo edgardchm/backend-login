@@ -362,146 +362,41 @@ app.get('/productos/test', verificarToken, async (req, res) => {
   }
 });
 
+// Endpoint SIMPLIFICADO para productos
 app.get('/productos', verificarToken, async (req, res) => {
   try {
-    console.log('🚀 Endpoint /productos llamado con query:', req.query);
+    console.log('🚀 Endpoint /productos llamado');
     
-    const {
-      pagina = 1,
-      por_pagina = 10,
-      ordenar_por = 'nombre',
-      orden = 'asc',
-      busqueda = '',
-      marca_id,
-      tipo_id
-    } = req.query;
-    
-    console.log('📋 Parámetros extraídos:', { pagina, por_pagina, ordenar_por, orden, busqueda, marca_id, tipo_id });
-
-    // Validar parámetros - SIMPLIFICADO
-    const offset = (parseInt(pagina) - 1) * parseInt(por_pagina);
-    const ordenesValidos = ['nombre', 'sku', 'precio', 'stock'];
-    const direccionesValidas = ['asc', 'desc'];
-
-    // Validar que la página y por_pagina sean números válidos
-    if (isNaN(parseInt(pagina)) || parseInt(pagina) < 1) {
-      return res.status(400).json({ error: 'Página debe ser un número mayor a 0' });
-    }
-
-    if (isNaN(parseInt(por_pagina)) || parseInt(por_pagina) < 1 || parseInt(por_pagina) > 100) {
-      return res.status(400).json({ error: 'Por página debe ser un número entre 1 y 100' });
-    }
-
-    if (!ordenesValidos.includes(ordenar_por)) {
-      return res.status(400).json({ error: `Campo de ordenamiento inválido. Válidos: ${ordenesValidos.join(', ')}` });
-    }
-
-    if (!direccionesValidas.includes(orden.toLowerCase())) {
-      return res.status(400).json({ error: 'Dirección de ordenamiento inválida. Use: asc o desc' });
-    }
-    
-    console.log('✅ Validación de parámetros exitosa');
-
-    // Construir query base
-    let whereConditions = [];
-    let queryParams = [];
-    let paramCount = 1;
-
-    // Filtro de búsqueda
-    if (busqueda) {
-      whereConditions.push(`(p.nombre ILIKE $${paramCount} OR p.sku ILIKE $${paramCount} OR p.descripcion ILIKE $${paramCount})`);
-      queryParams.push(`%${busqueda}%`);
-      paramCount++;
-    }
-
-    // Filtro de marca
-    if (marca_id) {
-      whereConditions.push(`p.marca_id = $${paramCount}`);
-      queryParams.push(marca_id);
-      paramCount++;
-    }
-
-    // Filtro de tipo
-    if (tipo_id) {
-      whereConditions.push(`p.tipo_id = $${paramCount}`);
-      queryParams.push(tipo_id);
-      paramCount++;
-    }
-
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-
-    // Query principal - ULTRA SIMPLIFICADA
+    // Query muy simple sin filtros
     const query = `
       SELECT 
         p.id,
         p.nombre,
         p.sku,
-        p.descripcion,
         p.precio,
-        p.precio_mayor,
-        p.precio_cliente,
-        p.stock,
-        m.marca,
-        t.nombre AS tipo
+        p.stock
       FROM productos p
-      LEFT JOIN marcas m ON p.marca_id = m.id
-      LEFT JOIN tipos_producto t ON p.tipo_id = t.id
-      ${whereClause}
-      ORDER BY p.${ordenar_por} ${orden.toUpperCase()}
-      LIMIT $${paramCount} OFFSET $${paramCount + 1}
+      LIMIT 10
     `;
-
-    console.log('🔍 Query construida:', query);
-    console.log('🔍 Parámetros:', queryParams);
-    console.log('🔍 Order clause:', orderClause);
-
-    // Agregar parámetros de paginación
-    queryParams.push(parseInt(por_pagina), offset);
-
-    console.log('🚀 Ejecutando query principal...');
-    const result = await db.query(query, queryParams);
-    console.log('✅ Query principal ejecutada exitosamente, filas obtenidas:', result.rows.length);
-
-    // Query para contar total de registros
-    const countQuery = `
-      SELECT COUNT(*) as total
-      FROM productos p
-      LEFT JOIN marcas m ON p.marca_id = m.id
-      LEFT JOIN tipos_producto t ON p.tipo_id = t.id
-      ${whereClause}
-    `;
-
-    console.log('🔢 Ejecutando query de conteo...');
-    const countResult = await db.query(countQuery, whereConditions.length > 0 ? queryParams.slice(0, -2) : []);
-    const totalRegistros = parseInt(countResult.rows[0].total);
-    console.log('✅ Query de conteo ejecutada, total:', totalRegistros);
-
+    
+    console.log('🔍 Query:', query);
+    
+    const result = await db.query(query);
+    
+    console.log('✅ Query ejecutada, filas obtenidas:', result.rows.length);
+    
     res.json({
       productos: result.rows,
-      paginacion: {
-        pagina: parseInt(pagina),
-        por_pagina: parseInt(por_pagina),
-        total: totalRegistros,
-        total_paginas: Math.ceil(totalRegistros / parseInt(por_pagina))
-      },
-      filtros: {
-        busqueda,
-        marca_id,
-        tipo_id,
-        ordenar_por,
-        orden
-      }
+      total: result.rows.length,
+      mensaje: 'Consulta exitosa'
     });
-
+    
   } catch (error) {
-    console.error('Error obteniendo productos:', error);
-    console.error('Query params:', queryParams);
-    console.error('Where clause:', whereClause);
-    console.error('Order clause:', orderClause);
+    console.error('❌ Error en endpoint /productos:', error);
     res.status(500).json({ 
-      error: 'Error al obtener los productos',
+      error: 'Error al obtener productos',
       detalle: error.message,
-      stack: error.stack 
+      stack: error.stack
     });
   }
 });
