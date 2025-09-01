@@ -281,8 +281,469 @@ app.get('/productos/total', verificarToken, async (req, res) => {
   }
 });
 
-// =================== PRODUCTOS ===================
-app.get('/productos/:busqueda', verificarToken, async (req, res) => {
+// =================== GESTIÓN COMPLETA DE PRODUCTOS ===================
+
+// Obtener todos los productos con paginación y filtros
+app.get('/productos', verificarToken, async (req, res) => {
+  try {
+    const {
+      pagina = 1,
+      limite = 20,
+      busqueda,
+      marca_id,
+      tipo_id,
+      ordenar_por = 'nombre',
+      orden = 'ASC',
+      stock_minimo
+    } = req.query;
+
+    // Validar parámetros
+    const offset = (parseInt(pagina) - 1) * parseInt(limite);
+    const ordenesValidos = ['nombre', 'sku', 'precio', 'stock', 'marca', 'tipo', 'fecha_creacion'];
+    const direccionesValidas = ['ASC', 'DESC'];
+
+    if (!ordenesValidos.includes(ordenar_por)) {
+      return res.status(400).json({ error: 'Campo de ordenamiento inválido' });
+    }
+
+    if (!direccionesValidas.includes(orden.toUpperCase())) {
+      return res.status(400).json({ error: 'Dirección de ordenamiento inválida' });
+    }
+
+    // Construir query base
+    let whereConditions = [];
+    let queryParams = [];
+    let paramCount = 1;
+
+    // Filtro de búsqueda
+    if (busqueda) {
+      whereConditions.push(`(p.nombre ILIKE $${paramCount} OR p.sku ILIKE $${paramCount} OR p.descripcion ILIKE $${paramCount})`);
+      queryParams.push(`%${busqueda}%`);
+      paramCount++;
+    }
+
+    // Filtro por marca
+    if (marca_id) {
+      whereConditions.push(`p.marca_id = $${paramCount}`);
+      queryParams.push(marca_id);
+      paramCount++;
+    }
+
+    // Filtro por tipo
+    if (tipo_id) {
+      whereConditions.push(`p.tipo_id = $${paramCount}`);
+      queryParams.push(tipo_id);
+      paramCount++;
+    }
+
+    // Filtro por stock mínimo
+    if (stock_minimo) {
+      whereConditions.push(`p.stock <= $${paramCount}`);
+      queryParams.push(parseInt(stock_minimo));
+      paramCount++;
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    // Query principal con filtros y paginación
+    const query = `
+      SELECT 
+        p.id,
+        p.nombre,
+        p.descripcion,
+        p.sku,
+        p.precio,
+        p.precio_mayor,
+        p.precio_cliente,
+        p.stock,
+        p.fecha_creacion,
+        p.fecha_actualizacion,
+        m.marca AS marca_nombre,
+        m.id AS marca_id,
+        t.nombre AS tipo_nombre,
+        t.id AS tipo_id
+      FROM productos p
+      LEFT JOIN marcas m ON p.marca_id = m.id
+      LEFT JOIN tipos_producto t ON p.tipo_id = t.id
+      ${whereClause}
+      ORDER BY p.${ordenar_por} ${orden}
+      LIMIT $${paramCount} OFFSET $${paramCount + 1}
+    `;
+
+    // Agregar parámetros de paginación
+    queryParams.push(parseInt(limite), offset);
+
+    const result = await db.query(query, queryParams);
+
+    // Query para contar total de registros
+    const countQuery = `
+      SELECT COUNT(*) as total
+      FROM productos p
+      ${whereClause}
+    `;
+
+    const countResult = await db.query(countQuery, whereConditions.length > 0 ? queryParams.slice(0, -2) : []);
+    const totalRegistros = parseInt(countResult.rows[0].total);
+
+    // Query para estadísticas
+    const statsQuery = `
+      SELECT 
+        COUNT(*) as total_productos,
+        SUM(stock) as stock_total,
+        AVG(precio) as precio_promedio,
+        MIN(precio) as precio_minimo,
+        MAX(precio) as precio_maximo,
+        COUNT(DISTINCT marca_id) as total_marcas,
+        COUNT(DISTINCT tipo_id) as total_tipos
+      FROM productos p
+      ${whereClause}
+    `;
+
+    const statsResult = await db.query(statsQuery, whereConditions.length > 0 ? queryParams.slice(0, -2) : []);
+    const estadisticas = statsResult.rows[0];
+
+    // Query para productos con stock bajo
+    const stockBajoQuery = `
+      SELECT COUNT(*) as productos_stock_bajo
+      FROM productos
+      WHERE stock <= 10
+    `;
+    const stockBajoResult = await db.query(stockBajoQuery);
+    const stockBajo = parseInt(stockBajoResult.rows[0].productos_stock_bajo);
+
+    res.json({
+      productos: result.rows,
+      paginacion: {
+        pagina: parseInt(pagina),
+        limite: parseInt(limite),
+        total: totalRegistros,
+        totalPaginas: Math.ceil(totalRegistros / parseInt(limite))
+      },
+      filtros: {
+        busqueda,
+        marca_id,
+        tipo_id,
+        stock_minimo,
+        ordenar_por,
+        orden
+      },
+      estadisticas: {
+        total_productos: parseInt(estadisticas.total_productos || 0),
+        stock_total: parseInt(estadisticas.stock_total || 0),
+        precio_promedio: parseFloat(estadisticas.precio_promedio || 0),
+        precio_minimo: parseFloat(estadisticas.precio_minimo || 0),
+        precio_maximo: parseFloat(estadisticas.precio_maximo || 0),
+        total_marcas: parseInt(estadisticas.total_marcas || 0),
+        total_tipos: parseInt(estadisticas.total_tipos || 0),
+        productos_stock_bajo: stockBajo
+      }
+    });
+
+  } catch (error) {
+    console.error('Error obteniendo productos:', error);
+    res.status(500).json({ error: 'Error al obtener los productos' });
+  }
+});
+
+// Obtener un producto específico por ID
+app.get('/productos/:id', verificarToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const query = `
+      SELECT 
+        p.id,
+        p.nombre,
+        p.descripcion,
+        p.sku,
+        p.precio,
+        p.precio_mayor,
+        p.precio_cliente,
+        p.stock,
+        p.fecha_creacion,
+        p.fecha_actualizacion,
+        m.marca AS marca_nombre,
+        m.id AS marca_id,
+        t.nombre AS tipo_nombre,
+        t.id AS tipo_id
+      FROM productos p
+      LEFT JOIN marcas m ON p.marca_id = m.id
+      LEFT JOIN tipos_producto t ON p.tipo_id = t.id
+      WHERE p.id = $1
+    `;
+
+    const result = await db.query(query, [id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Producto no encontrado' });
+    }
+
+    res.json(result.rows[0]);
+
+  } catch (error) {
+    console.error('Error obteniendo producto:', error);
+    res.status(500).json({ error: 'Error al obtener el producto' });
+  }
+});
+
+// Crear un nuevo producto
+app.post('/productos', verificarToken, async (req, res) => {
+  try {
+    const {
+      nombre,
+      descripcion,
+      sku,
+      precio,
+      precio_mayor,
+      precio_cliente,
+      stock,
+      marca_id,
+      tipo_id
+    } = req.body;
+
+    // Validaciones básicas
+    if (!nombre || !sku) {
+      return res.status(400).json({ error: 'Nombre y SKU son obligatorios' });
+    }
+
+    // Verificar si el SKU ya existe
+    const skuCheck = await db.query('SELECT id FROM productos WHERE sku = $1', [sku]);
+    if (skuCheck.rows.length > 0) {
+      return res.status(400).json({ error: 'El SKU ya existe' });
+    }
+
+    // Verificar que marca y tipo existan
+    if (marca_id) {
+      const marcaCheck = await db.query('SELECT id FROM marcas WHERE id = $1', [marca_id]);
+      if (marcaCheck.rows.length === 0) {
+        return res.status(400).json({ error: 'Marca no encontrada' });
+      }
+    }
+
+    if (tipo_id) {
+      const tipoCheck = await db.query('SELECT id FROM tipos_producto WHERE id = $1', [tipo_id]);
+      if (tipoCheck.rows.length === 0) {
+        return res.status(400).json({ error: 'Tipo de producto no encontrado' });
+      }
+    }
+
+    const query = `
+      INSERT INTO productos (
+        nombre, descripcion, sku, precio, precio_mayor, precio_cliente, 
+        stock, marca_id, tipo_id, fecha_creacion, fecha_actualizacion
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+      RETURNING *
+    `;
+
+    const result = await db.query(query, [
+      nombre,
+      descripcion || '',
+      sku,
+      parseFloat(precio) || 0,
+      parseFloat(precio_mayor) || 0,
+      parseFloat(precio_cliente) || 0,
+      parseInt(stock) || 0,
+      marca_id || null,
+      tipo_id || null
+    ]);
+
+    res.status(201).json({
+      message: 'Producto creado exitosamente',
+      producto: result.rows[0]
+    });
+
+  } catch (error) {
+    console.error('Error creando producto:', error);
+    res.status(500).json({ error: 'Error al crear el producto' });
+  }
+});
+
+// Actualizar un producto existente
+app.put('/productos/:id', verificarToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      nombre,
+      descripcion,
+      sku,
+      precio,
+      precio_mayor,
+      precio_cliente,
+      stock,
+      marca_id,
+      tipo_id
+    } = req.body;
+
+    // Verificar que el producto existe
+    const productoCheck = await db.query('SELECT id FROM productos WHERE id = $1', [id]);
+    if (productoCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Producto no encontrado' });
+    }
+
+    // Si se está cambiando el SKU, verificar que no exista
+    if (sku) {
+      const skuCheck = await db.query('SELECT id FROM productos WHERE sku = $1 AND id != $2', [sku, id]);
+      if (skuCheck.rows.length > 0) {
+        return res.status(400).json({ error: 'El SKU ya existe en otro producto' });
+      }
+    }
+
+    // Verificar que marca y tipo existan si se están actualizando
+    if (marca_id) {
+      const marcaCheck = await db.query('SELECT id FROM marcas WHERE id = $1', [marca_id]);
+      if (marcaCheck.rows.length === 0) {
+        return res.status(400).json({ error: 'Marca no encontrada' });
+      }
+    }
+
+    if (tipo_id) {
+      const tipoCheck = await db.query('SELECT id FROM tipos_producto WHERE id = $1', [tipo_id]);
+      if (tipoCheck.rows.length === 0) {
+        return res.status(400).json({ error: 'Tipo de producto no encontrado' });
+      }
+    }
+
+    const query = `
+      UPDATE productos SET
+        nombre = COALESCE($1, nombre),
+        descripcion = COALESCE($2, descripcion),
+        sku = COALESCE($3, sku),
+        precio = COALESCE($4, precio),
+        precio_mayor = COALESCE($5, precio_mayor),
+        precio_cliente = COALESCE($6, precio_cliente),
+        stock = COALESCE($7, stock),
+        marca_id = COALESCE($8, marca_id),
+        tipo_id = COALESCE($9, tipo_id),
+        fecha_actualizacion = NOW()
+      WHERE id = $10
+      RETURNING *
+    `;
+
+    const result = await db.query(query, [
+      nombre,
+      descripcion,
+      sku,
+      precio ? parseFloat(precio) : null,
+      precio_mayor ? parseFloat(precio_mayor) : null,
+      precio_cliente ? parseFloat(precio_cliente) : null,
+      stock ? parseInt(stock) : null,
+      marca_id,
+      tipo_id,
+      id
+    ]);
+
+    res.json({
+      message: 'Producto actualizado exitosamente',
+      producto: result.rows[0]
+    });
+
+  } catch (error) {
+    console.error('Error actualizando producto:', error);
+    res.status(500).json({ error: 'Error al actualizar el producto' });
+  }
+});
+
+// Eliminar un producto
+app.delete('/productos/:id', verificarToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Verificar que el producto existe
+    const productoCheck = await db.query('SELECT id, nombre, sku FROM productos WHERE id = $1', [id]);
+    if (productoCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Producto no encontrado' });
+    }
+
+    const producto = productoCheck.rows[0];
+
+    // Verificar si el producto está siendo usado en ventas
+    const ventasCheck = await db.query('SELECT COUNT(*) FROM ventas_detalle WHERE sku = $1', [producto.sku]);
+    const ventasCount = parseInt(ventasCheck.rows[0].count);
+
+    if (ventasCount > 0) {
+      return res.status(400).json({ 
+        error: 'No se puede eliminar el producto porque está siendo usado en ventas',
+        ventas_asociadas: ventasCount
+      });
+    }
+
+    // Eliminar el producto
+    await db.query('DELETE FROM productos WHERE id = $1', [id]);
+
+    res.json({
+      message: 'Producto eliminado exitosamente',
+      producto_eliminado: {
+        id: producto.id,
+        nombre: producto.nombre,
+        sku: producto.sku
+      }
+    });
+
+  } catch (error) {
+    console.error('Error eliminando producto:', error);
+    res.status(500).json({ error: 'Error al eliminar el producto' });
+  }
+});
+
+// Actualizar stock de un producto
+app.patch('/productos/:id/stock', verificarToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { stock, operacion, cantidad, motivo } = req.body; // operacion: 'set', 'add', 'subtract'
+
+    // Verificar que el producto existe
+    const productoCheck = await db.query('SELECT id, nombre, sku, stock FROM productos WHERE id = $1', [id]);
+    if (productoCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Producto no encontrado' });
+    }
+
+    const producto = productoCheck.rows[0];
+    let nuevoStock = producto.stock;
+
+    // Calcular nuevo stock según la operación
+    switch (operacion) {
+      case 'set':
+        nuevoStock = parseInt(stock);
+        break;
+      case 'add':
+        nuevoStock = producto.stock + parseInt(cantidad || 0);
+        break;
+      case 'subtract':
+        nuevoStock = producto.stock - parseInt(cantidad || 0);
+        if (nuevoStock < 0) {
+          return res.status(400).json({ error: 'El stock no puede ser negativo' });
+        }
+        break;
+      default:
+        return res.status(400).json({ error: 'Operación inválida. Use: set, add, o subtract' });
+    }
+
+    // Actualizar stock
+    const result = await db.query(
+      'UPDATE productos SET stock = $1, fecha_actualizacion = NOW() WHERE id = $2 RETURNING *',
+      [nuevoStock, id]
+    );
+
+    res.json({
+      message: 'Stock actualizado exitosamente',
+      producto: result.rows[0],
+      operacion_realizada: {
+        operacion,
+        stock_anterior: producto.stock,
+        stock_nuevo: nuevoStock,
+        diferencia: nuevoStock - producto.stock,
+        motivo: motivo || 'Actualización manual'
+      }
+    });
+
+  } catch (error) {
+    console.error('Error actualizando stock:', error);
+    res.status(500).json({ error: 'Error al actualizar el stock' });
+  }
+});
+
+// Búsqueda de productos por SKU o nombre
+app.get('/productos/buscar/:busqueda', verificarToken, async (req, res) => {
   const { busqueda } = req.params;
 
   try {
@@ -329,7 +790,6 @@ app.get('/productos/:busqueda', verificarToken, async (req, res) => {
     res.status(500).json({ error: error.message, stack: error.stack });
   }
 });
-
 
 // -----------------------------
 // Crear una venta con detalles
@@ -801,7 +1261,7 @@ app.get('/ventas/reporte/:periodo', verificarToken, async (req, res) => {
 });
 
 app.post('/ordenes', async (req, res) => {
-  const client = await pool.connect();
+  const client = await db.connect();
   try {
     await client.query('BEGIN');
 
@@ -904,7 +1364,7 @@ app.post('/ordenes', async (req, res) => {
 
 app.get('/ordenes', async (req, res) => {
   try {
-    const result = await pool.query(`
+    const result = await db.query(`
       SELECT o.*, u.nombre AS tecnico_nombre, g.nombre AS garantia_nombre, m.nombre AS marca_nombre, te.nombre AS tipo_equipo_nombre
       FROM ordenes_servicio o
       LEFT JOIN usuarios u ON o.tecnico_id = u.id
@@ -924,7 +1384,7 @@ app.get('/ordenes', async (req, res) => {
 app.get('/ordenes/:id', async (req, res) => {
   const ordenId = req.params.id;
   try {
-    const ordenResult = await pool.query(`
+    const ordenResult = await db.query(`
       SELECT o.*, u.nombre AS tecnico_nombre, g.nombre AS garantia_nombre, m.nombre AS marca_nombre, te.nombre AS tipo_equipo_nombre
       FROM ordenes_servicio o
       LEFT JOIN usuarios u ON o.tecnico_id = u.id
@@ -941,15 +1401,15 @@ app.get('/ordenes/:id', async (req, res) => {
     const orden = ordenResult.rows[0];
 
     const [verificacionesRes, fallasRes, repuestosRes, fotosRes] = await Promise.all([
-      pool.query('SELECT * FROM verificaciones_equipo WHERE orden_id = $1', [ordenId]),
-      pool.query('SELECT * FROM fallas WHERE orden_id = $1', [ordenId]),
-      pool.query(`
+      db.query('SELECT * FROM verificaciones_equipo WHERE orden_id = $1', [ordenId]),
+      db.query('SELECT * FROM fallas WHERE orden_id = $1', [ordenId]),
+      db.query(`
         SELECT orp.*, p.nombre AS repuesto_nombre 
         FROM orden_repuestos orp
         LEFT JOIN productos p ON orp.repuesto_id = p.id
         WHERE orp.orden_id = $1
       `, [ordenId]),
-      pool.query('SELECT * FROM fotos_orden WHERE orden_id = $1', [ordenId])
+      db.query('SELECT * FROM fotos_orden WHERE orden_id = $1', [ordenId])
     ]);
 
     res.json({
@@ -969,7 +1429,7 @@ app.patch('/ordenes/:id', async (req, res) => {
   const ordenId = req.params.id;
   const { estado_equipo, diagnostico, observaciones } = req.body;
   try {
-    const result = await pool.query(`
+    const result = await db.query(`
       UPDATE ordenes_servicio
       SET estado_equipo = COALESCE($1, estado_equipo),
           diagnostico = COALESCE($2, diagnostico),
@@ -1682,3 +2142,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en el puerto ${PORT}`);
 });
+
