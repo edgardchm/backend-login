@@ -329,7 +329,7 @@ app.get('/productos', verificarToken, async (req, res) => {
 
     // Filtro de búsqueda
     if (busqueda) {
-      whereConditions.push(`(p.nombre ILIKE $${paramCount} OR p.sku ILIKE $${paramCount} OR p.descripcion ILIKE $${paramCount})`);
+      whereConditions.push(`(p.nombre ILIKE $${paramCount} OR p.sku ILIKE $${paramCount})`);
       queryParams.push(`%${busqueda}%`);
       paramCount++;
     }
@@ -362,7 +362,6 @@ app.get('/productos', verificarToken, async (req, res) => {
       SELECT 
         p.id,
         p.nombre,
-        p.descripcion,
         p.sku,
         p.precio,
         p.precio_mayor,
@@ -470,7 +469,6 @@ app.get('/productos/:id', verificarToken, async (req, res) => {
       SELECT 
         p.id,
         p.nombre,
-        p.descripcion,
         p.sku,
         p.precio,
         p.precio_mayor,
@@ -507,7 +505,6 @@ app.post('/productos', verificarToken, async (req, res) => {
   try {
     const {
       nombre,
-      descripcion,
       sku,
       precio,
       precio_mayor,
@@ -545,15 +542,14 @@ app.post('/productos', verificarToken, async (req, res) => {
 
     const query = `
       INSERT INTO productos (
-        nombre, descripcion, sku, precio, precio_mayor, precio_cliente, 
+        nombre, sku, precio, precio_mayor, precio_cliente, 
         stock, marca_id, tipo_id, fecha_creacion, fecha_actualizacion
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
       RETURNING *
     `;
 
     const result = await db.query(query, [
       nombre,
-      descripcion || '',
       sku,
       parseFloat(precio) || 0,
       parseFloat(precio_mayor) || 0,
@@ -580,7 +576,6 @@ app.put('/productos/:id', verificarToken, async (req, res) => {
     const { id } = req.params;
     const {
       nombre,
-      descripcion,
       sku,
       precio,
       precio_mayor,
@@ -622,22 +617,20 @@ app.put('/productos/:id', verificarToken, async (req, res) => {
     const query = `
       UPDATE productos SET
         nombre = COALESCE($1, nombre),
-        descripcion = COALESCE($2, descripcion),
-        sku = COALESCE($3, sku),
-        precio = COALESCE($4, precio),
-        precio_mayor = COALESCE($5, precio_mayor),
-        precio_cliente = COALESCE($6, precio_cliente),
-        stock = COALESCE($7, stock),
-        marca_id = COALESCE($8, marca_id),
-        tipo_id = COALESCE($9, tipo_id),
+        sku = COALESCE($2, sku),
+        precio = COALESCE($3, precio),
+        precio_mayor = COALESCE($4, precio_mayor),
+        precio_cliente = COALESCE($5, precio_cliente),
+        stock = COALESCE($6, stock),
+        marca_id = COALESCE($7, marca_id),
+        tipo_id = COALESCE($8, tipo_id),
         fecha_actualizacion = NOW()
-      WHERE id = $10
+      WHERE id = $9
       RETURNING *
     `;
 
     const result = await db.query(query, [
       nombre,
-      descripcion,
       sku,
       precio ? parseFloat(precio) : null,
       precio_mayor ? parseFloat(precio_mayor) : null,
