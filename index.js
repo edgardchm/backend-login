@@ -462,43 +462,99 @@ app.get('/productos', verificarToken, async (req, res) => {
   }
 });
 
-// Obtener un producto específico por ID
-app.get('/productos/:id', verificarToken, async (req, res) => {
+// Obtener un producto específico por ID o buscar por nombre/SKU
+app.get('/productos/:parametro', verificarToken, async (req, res) => {
   try {
-    const { id } = req.params;
+    const { parametro } = req.params;
+    
+    // Verificar si el parámetro es un ID numérico
+    const esId = !isNaN(parametro) && parseInt(parametro) > 0;
+    
+    if (esId) {
+      // Es un ID, obtener producto específico
+      const query = `
+        SELECT 
+          p.id,
+          p.nombre,
+          p.sku,
+          p.precio,
+          p.precio_mayor,
+          p.precio_cliente,
+          p.stock,
+          p.fecha_creacion,
+          p.fecha_actualizacion,
+          m.marca AS marca_nombre,
+          m.id AS marca_id,
+          t.nombre AS tipo_nombre,
+          t.id AS tipo_id
+        FROM productos p
+        LEFT JOIN marcas m ON p.marca_id = m.id
+        LEFT JOIN tipos_producto t ON p.tipo_id = t.id
+        WHERE p.id = $1
+      `;
 
-    const query = `
-      SELECT 
-        p.id,
-        p.nombre,
-        p.sku,
-        p.precio,
-        p.precio_mayor,
-        p.precio_cliente,
-        p.stock,
-        p.fecha_creacion,
-        p.fecha_actualizacion,
-        m.marca AS marca_nombre,
-        m.id AS marca_id,
-        t.nombre AS tipo_nombre,
-        t.id AS tipo_id
-      FROM productos p
-      LEFT JOIN marcas m ON p.marca_id = m.id
-      LEFT JOIN tipos_producto t ON p.tipo_id = t.id
-      WHERE p.id = $1
-    `;
+      const result = await db.query(query, [parseInt(parametro)]);
 
-    const result = await db.query(query, [id]);
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: 'Producto no encontrado' });
+      }
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Producto no encontrado' });
+      res.json(result.rows[0]);
+    } else {
+      // Es una búsqueda, buscar por nombre o SKU
+      const query = `
+        SELECT 
+          p.id,
+          p.nombre,
+          p.sku,
+          p.precio,
+          p.precio_mayor,
+          p.precio_cliente,
+          p.stock,
+          p.fecha_creacion,
+          p.fecha_actualizacion,
+          m.marca AS marca, 
+          t.nombre AS tipo
+        FROM productos p
+        LEFT JOIN marcas m ON p.marca_id = m.id
+        LEFT JOIN tipos_producto t ON p.tipo_id = t.id
+        WHERE p.sku ILIKE $1
+           OR p.nombre ILIKE $1
+        ORDER BY 
+          CASE 
+            WHEN p.sku = $2 THEN 1
+            WHEN p.sku ILIKE $3 THEN 2
+            ELSE 3
+          END,
+          p.nombre
+      `;
+
+      const searchPattern = `%${parametro}%`;
+      const skuExacto = parametro;
+      const skuPattern = `%${parametro}%`;
+      
+      const result = await db.query(query, [searchPattern, skuExacto, skuPattern]);
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: 'No se encontraron productos con esa búsqueda' });
+      }
+
+      // Si solo hay un resultado exacto por SKU, devolver solo ese
+      if (result.rows.length === 1 && result.rows[0].sku.toLowerCase() === parametro.toLowerCase()) {
+        return res.json(result.rows[0]);
+      }
+
+      // Si hay múltiples resultados, devolver el array
+      res.json({
+        total: result.rows.length,
+        productos: result.rows,
+        busqueda: parametro
+      });
     }
 
-    res.json(result.rows[0]);
-
   } catch (error) {
-    console.error('Error obteniendo producto:', error);
-    res.status(500).json({ error: 'Error al obtener el producto' });
+    console.error('Error obteniendo/buscando producto:', error);
+    res.status(500).json({ error: 'Error al obtener/buscar el producto' });
   }
 });
 
