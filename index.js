@@ -575,6 +575,7 @@ app.get('/productos/:parametro', verificarToken, async (req, res) => {
   }
 });
 
+
 // Crear un nuevo producto
 app.post('/productos', verificarToken, async (req, res) => {
   try {
