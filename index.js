@@ -289,6 +289,7 @@ app.get('/productos', verificarToken, async (req, res) => {
     const {
       pagina = 1,
       limite = 20,
+      por_pagina, // Agregar soporte para por_pagina
       busqueda,
       marca_id,
       tipo_id,
@@ -297,17 +298,28 @@ app.get('/productos', verificarToken, async (req, res) => {
       stock_minimo
     } = req.query;
 
+    // Usar por_pagina si está disponible, sino usar limite
+    const limiteFinal = por_pagina ? parseInt(por_pagina) : parseInt(limite);
+
     // Validar parámetros
-    const offset = (parseInt(pagina) - 1) * parseInt(limite);
+    const offset = (parseInt(pagina) - 1) * limiteFinal;
     const ordenesValidos = ['nombre', 'sku', 'precio', 'stock', 'marca', 'tipo', 'fecha_creacion'];
     const direccionesValidas = ['ASC', 'DESC'];
 
     if (!ordenesValidos.includes(ordenar_por)) {
-      return res.status(400).json({ error: 'Campo de ordenamiento inválido' });
+      return res.status(400).json({ 
+        error: 'Campo de ordenamiento inválido',
+        campos_validos: ordenesValidos,
+        campo_enviado: ordenar_por
+      });
     }
 
     if (!direccionesValidas.includes(orden.toUpperCase())) {
-      return res.status(400).json({ error: 'Dirección de ordenamiento inválida' });
+      return res.status(400).json({ 
+        error: 'Dirección de ordenamiento inválida',
+        direcciones_validas: direccionesValidas,
+        direccion_enviada: orden
+      });
     }
 
     // Construir query base
@@ -371,7 +383,7 @@ app.get('/productos', verificarToken, async (req, res) => {
     `;
 
     // Agregar parámetros de paginación
-    queryParams.push(parseInt(limite), offset);
+    queryParams.push(limiteFinal, offset);
 
     const result = await db.query(query, queryParams);
 
@@ -389,10 +401,10 @@ app.get('/productos', verificarToken, async (req, res) => {
     const statsQuery = `
       SELECT 
         COUNT(*) as total_productos,
-        SUM(stock) as stock_total,
-        AVG(precio) as precio_promedio,
-        MIN(precio) as precio_minimo,
-        MAX(precio) as precio_maximo,
+        COALESCE(SUM(stock), 0) as stock_total,
+        COALESCE(AVG(precio), 0) as precio_promedio,
+        COALESCE(MIN(precio), 0) as precio_minimo,
+        COALESCE(MAX(precio), 0) as precio_maximo,
         COUNT(DISTINCT marca_id) as total_marcas,
         COUNT(DISTINCT tipo_id) as total_tipos
       FROM productos p
@@ -415,9 +427,9 @@ app.get('/productos', verificarToken, async (req, res) => {
       productos: result.rows,
       paginacion: {
         pagina: parseInt(pagina),
-        limite: parseInt(limite),
+        limite: limiteFinal,
         total: totalRegistros,
-        totalPaginas: Math.ceil(totalRegistros / parseInt(limite))
+        totalPaginas: Math.ceil(totalRegistros / limiteFinal)
       },
       filtros: {
         busqueda,
@@ -441,7 +453,11 @@ app.get('/productos', verificarToken, async (req, res) => {
 
   } catch (error) {
     console.error('Error obteniendo productos:', error);
-    res.status(500).json({ error: 'Error al obtener los productos' });
+    res.status(500).json({ 
+      error: 'Error al obtener los productos',
+      detalle: error.message,
+      stack: error.stack
+    });
   }
 });
 
