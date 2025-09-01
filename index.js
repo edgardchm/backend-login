@@ -419,6 +419,340 @@ app.get('/ventas', verificarToken, async (req, res) => {
 });
 
 // -----------------------------
+// Historial de ventas con filtros y paginación
+// -----------------------------
+app.get('/ventas/historial', verificarToken, async (req, res) => {
+  try {
+    const {
+      pagina = 1,
+      limite = 20,
+      fecha_inicio,
+      fecha_fin,
+      vendedor,
+      forma_pago,
+      ordenar_por = 'fecha',
+      orden = 'DESC'
+    } = req.query;
+
+    // Validar parámetros
+    const offset = (parseInt(pagina) - 1) * parseInt(limite);
+    const ordenesValidos = ['fecha', 'total', 'vendedor', 'numero_boleta'];
+    const direccionesValidas = ['ASC', 'DESC'];
+
+    if (!ordenesValidos.includes(ordenar_por)) {
+      return res.status(400).json({ error: 'Campo de ordenamiento inválido' });
+    }
+
+    if (!direccionesValidas.includes(orden.toUpperCase())) {
+      return res.status(400).json({ error: 'Dirección de ordenamiento inválida' });
+    }
+
+    // Construir query base
+    let whereConditions = [];
+    let queryParams = [];
+    let paramCount = 1;
+
+    // Filtros de fecha
+    if (fecha_inicio) {
+      whereConditions.push(`DATE(v.fecha) >= $${paramCount}`);
+      queryParams.push(fecha_inicio);
+      paramCount++;
+    }
+
+    if (fecha_fin) {
+      whereConditions.push(`DATE(v.fecha) <= $${paramCount}`);
+      queryParams.push(fecha_fin);
+      paramCount++;
+    }
+
+    // Filtro de vendedor
+    if (vendedor) {
+      whereConditions.push(`v.vendedor ILIKE $${paramCount}`);
+      queryParams.push(`%${vendedor}%`);
+      paramCount++;
+    }
+
+    // Filtro de forma de pago
+    if (forma_pago) {
+      whereConditions.push(`v.forma_pago = $${paramCount}`);
+      queryParams.push(forma_pago);
+      paramCount++;
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    // Query principal con filtros y paginación
+    const query = `
+      SELECT 
+        v.id,
+        v.numero_boleta,
+        v.fecha,
+        v.vendedor,
+        v.forma_pago,
+        v.total,
+        v.monto_recibido,
+        v.vuelto,
+        json_agg(
+          json_build_object(
+            'sku', d.sku,
+            'descripcion', d.descripcion,
+            'cantidad', d.cantidad,
+            'precio_unitario', d.precio_unitario,
+            'subtotal', d.cantidad * d.precio_unitario
+          )
+        ) AS items,
+        COUNT(d.id) AS total_items
+      FROM ventas v
+      LEFT JOIN ventas_detalle d ON v.id = d.venta_id
+      ${whereClause}
+      GROUP BY v.id
+      ORDER BY v.${ordenar_por} ${orden}
+      LIMIT $${paramCount} OFFSET $${paramCount + 1}
+    `;
+
+    // Agregar parámetros de paginación
+    queryParams.push(parseInt(limite), offset);
+
+    const result = await db.query(query, queryParams);
+
+    // Query para contar total de registros
+    const countQuery = `
+      SELECT COUNT(DISTINCT v.id) as total
+      FROM ventas v
+      ${whereClause}
+    `;
+
+    const countResult = await db.query(countQuery, whereConditions.length > 0 ? queryParams.slice(0, -2) : []);
+    const totalRegistros = parseInt(countResult.rows[0].total);
+
+    // Query para estadísticas
+    const statsQuery = `
+      SELECT 
+        COUNT(*) as total_ventas,
+        SUM(total) as total_ingresos,
+        AVG(total) as promedio_venta,
+        MIN(total) as venta_minima,
+        MAX(total) as venta_maxima,
+        COUNT(DISTINCT vendedor) as total_vendedores
+      FROM ventas v
+      ${whereClause}
+    `;
+
+    const statsResult = await db.query(statsQuery, whereConditions.length > 0 ? queryParams.slice(0, -2) : []);
+    const estadisticas = statsResult.rows[0];
+
+    // Query para top vendedores
+    const topVendedoresQuery = `
+      SELECT 
+        vendedor,
+        COUNT(*) as total_ventas,
+        SUM(total) as total_ventas_monto
+      FROM ventas v
+      ${whereClause}
+      GROUP BY vendedor
+      ORDER BY total_ventas_monto DESC
+      LIMIT 5
+    `;
+
+    const topVendedoresResult = await db.query(topVendedoresQuery, whereConditions.length > 0 ? queryParams.slice(0, -2) : []);
+    const topVendedores = topVendedoresResult.rows;
+
+    // Query para formas de pago más usadas
+    const formasPagoQuery = `
+      SELECT 
+        forma_pago,
+        COUNT(*) as total_ventas,
+        SUM(total) as total_monto
+      FROM ventas v
+      ${whereClause}
+      GROUP BY forma_pago
+      ORDER BY total_ventas DESC
+    `;
+
+    const formasPagoResult = await db.query(formasPagoQuery, whereConditions.length > 0 ? queryParams.slice(0, -2) : []);
+    const formasPago = formasPagoResult.rows;
+
+    res.json({
+      ventas: result.rows,
+      paginacion: {
+        pagina: parseInt(pagina),
+        limite: parseInt(limite),
+        total: totalRegistros,
+        totalPaginas: Math.ceil(totalRegistros / parseInt(limite))
+      },
+      filtros: {
+        fecha_inicio,
+        fecha_fin,
+        vendedor,
+        forma_pago,
+        ordenar_por,
+        orden
+      },
+      estadisticas: {
+        total_ventas: parseInt(estadisticas.total_ventas || 0),
+        total_ingresos: parseFloat(estadisticas.total_ingresos || 0),
+        promedio_venta: parseFloat(estadisticas.promedio_venta || 0),
+        venta_minima: parseFloat(estadisticas.venta_minima || 0),
+        venta_maxima: parseFloat(estadisticas.venta_maxima || 0),
+        total_vendedores: parseInt(estadisticas.total_vendedores || 0)
+      },
+      top_vendedores: topVendedores,
+      formas_pago: formasPago
+    });
+
+  } catch (error) {
+    console.error('Error obteniendo historial de ventas:', error);
+    res.status(500).json({ error: 'Error al obtener el historial de ventas' });
+  }
+});
+
+// -----------------------------
+// Reporte resumido de ventas por período
+// -----------------------------
+app.get('/ventas/reporte-resumen/:periodo', verificarToken, async (req, res) => {
+  const { periodo } = req.params;
+  const { fecha_inicio, fecha_fin } = req.query;
+
+  let filtroFecha;
+  let tituloPeriodo;
+
+  if (fecha_inicio && fecha_fin) {
+    // Filtro personalizado por fechas
+    filtroFecha = "DATE(fecha) BETWEEN $1 AND $2";
+    tituloPeriodo = `Del ${fecha_inicio} al ${fecha_fin}`;
+  } else {
+    // Filtro por período predefinido
+    switch (periodo) {
+      case 'hoy':
+        filtroFecha = "DATE(fecha) = CURRENT_DATE";
+        tituloPeriodo = 'Hoy';
+        break;
+      case 'ayer':
+        filtroFecha = "DATE(fecha) = CURRENT_DATE - INTERVAL '1 day'";
+        tituloPeriodo = 'Ayer';
+        break;
+      case 'semana':
+        filtroFecha = "DATE_TRUNC('week', fecha) = DATE_TRUNC('week', CURRENT_DATE)";
+        tituloPeriodo = 'Esta semana';
+        break;
+      case 'mes':
+        filtroFecha = "DATE_TRUNC('month', fecha) = DATE_TRUNC('month', CURRENT_DATE)";
+        tituloPeriodo = 'Este mes';
+        break;
+      case 'mes_anterior':
+        filtroFecha = "DATE_TRUNC('month', fecha) = DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')";
+        tituloPeriodo = 'Mes anterior';
+        break;
+      case 'anio':
+        filtroFecha = "DATE_TRUNC('year', fecha) = DATE_TRUNC('year', CURRENT_DATE)";
+        tituloPeriodo = 'Este año';
+        break;
+      default:
+        return res.status(400).json({ error: 'Periodo inválido' });
+    }
+  }
+
+  try {
+    const queryParams = fecha_inicio && fecha_fin ? [fecha_inicio, fecha_fin] : [];
+
+    // Estadísticas generales del período
+    const statsQuery = `
+      SELECT 
+        COUNT(*) as total_ventas,
+        SUM(total) as total_ingresos,
+        AVG(total) as promedio_venta,
+        MIN(total) as venta_minima,
+        MAX(total) as venta_maxima,
+        COUNT(DISTINCT vendedor) as total_vendedores
+      FROM ventas
+      WHERE ${filtroFecha}
+    `;
+
+    const statsResult = await db.query(statsQuery, queryParams);
+    const estadisticas = statsResult.rows[0];
+
+    // Top vendedores del período
+    const topVendedoresQuery = `
+      SELECT 
+        vendedor,
+        COUNT(*) as total_ventas,
+        SUM(total) as total_ventas_monto
+      FROM ventas
+      WHERE ${filtroFecha}
+      GROUP BY vendedor
+      ORDER BY total_ventas_monto DESC
+      LIMIT 5
+    `;
+
+    const topVendedoresResult = await db.query(topVendedoresQuery, queryParams);
+
+    // Ventas por día (últimos 7 días si es período personalizado)
+    let ventasPorDiaQuery;
+    if (fecha_inicio && fecha_fin) {
+      ventasPorDiaQuery = `
+        SELECT 
+          DATE(fecha) as dia,
+          COUNT(*) as total_ventas,
+          SUM(total) as total_ingresos
+        FROM ventas
+        WHERE ${filtroFecha}
+        GROUP BY DATE(fecha)
+        ORDER BY dia
+      `;
+    } else {
+      ventasPorDiaQuery = `
+        SELECT 
+          DATE(fecha) as dia,
+          COUNT(*) as total_ventas,
+          SUM(total) as total_ingresos
+        FROM ventas
+        WHERE ${filtroFecha}
+        GROUP BY DATE(fecha)
+        ORDER BY dia
+      `;
+    }
+
+    const ventasPorDiaResult = await db.query(ventasPorDiaQuery, queryParams);
+
+    // Productos más vendidos del período
+    const productosMasVendidosQuery = `
+      SELECT 
+        d.sku,
+        d.descripcion,
+        SUM(d.cantidad) as total_vendido,
+        SUM(d.cantidad * d.precio_unitario) as total_ingresos
+      FROM ventas v
+      JOIN ventas_detalle d ON v.id = d.venta_id
+      WHERE ${filtroFecha}
+      GROUP BY d.sku, d.descripcion
+      ORDER BY total_vendido DESC
+      LIMIT 10
+    `;
+
+    const productosMasVendidosResult = await db.query(productosMasVendidosQuery, queryParams);
+
+    res.json({
+      periodo: tituloPeriodo,
+      estadisticas: {
+        total_ventas: parseInt(estadisticas.total_ventas || 0),
+        total_ingresos: parseFloat(estadisticas.total_ingresos || 0),
+        promedio_venta: parseFloat(estadisticas.promedio_venta || 0),
+        venta_minima: parseFloat(estadisticas.venta_minima || 0),
+        venta_maxima: parseFloat(estadisticas.venta_maxima || 0),
+        total_vendedores: parseInt(estadisticas.total_vendedores || 0)
+      },
+      top_vendedores: topVendedoresResult.rows,
+      ventas_por_dia: ventasPorDiaResult.rows,
+      productos_mas_vendidos: productosMasVendidosResult.rows
+    });
+
+  } catch (error) {
+    console.error('Error generando reporte resumido:', error);
+    res.status(500).json({ error: 'Error al generar el reporte resumido' });
+  }
+});
+
+// -----------------------------
 // Reporte filtrado por periodo
 // -----------------------------
 app.get('/ventas/reporte/:periodo', verificarToken, async (req, res) => {
@@ -1232,37 +1566,34 @@ app.patch('/ordenes-servicio/:id/estado-reparacion', verificarToken, async (req,
       return res.status(404).json({ error: 'Orden no encontrada' });
     }
 
-    // Verificar si hay fallas para esta orden
+    // SOLUCIÓN TEMPORAL: Solo crear una falla si no existe
+    // El estado_reparacion se calculará dinámicamente en el GET
     const fallasExistentes = await client.query('SELECT COUNT(*) FROM fallas WHERE orden_id = $1', [id]);
     
-    if (parseInt(fallasExistentes.rows[0].count) > 0) {
-      // Si hay fallas, actualizar su estado
+    if (parseInt(fallasExistentes.rows[0].count) === 0) {
+      // Si no hay fallas, crear una falla por defecto
       await client.query(
-        `UPDATE fallas SET estado = $1 WHERE orden_id = $2`,
-        [estado_reparacion, id]
-      );
-    } else {
-      // Si no hay fallas, crear una falla por defecto con el estado especificado
-      await client.query(
-        `INSERT INTO fallas (orden_id, descripcion, estado) VALUES ($1, $2, $3)`,
-        [id, 'Falla general', estado_reparacion]
+        `INSERT INTO fallas (orden_id, descripcion) VALUES ($1, $2)`,
+        [id, 'Falla general']
       );
     }
 
     await client.query('COMMIT');
     
     res.json({ 
-      message: 'Estado de reparación actualizado correctamente',
+      message: 'Estado de reparación procesado correctamente',
       orden_id: id,
-      estado_reparacion: estado_reparacion
+      estado_reparacion: estado_reparacion,
+      nota: 'Se creó una falla por defecto. Para almacenar el estado, agregar columna estado a la tabla fallas.',
+      instruccion: 'Ejecutar: ALTER TABLE fallas ADD COLUMN estado VARCHAR(50) DEFAULT \'PENDIENTE\';'
     });
 
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error('Error actualizando estado de reparación:', error);
+    console.error('Error procesando estado de reparación:', error);
     
     res.status(500).json({ 
-      error: 'Error al actualizar el estado de reparación',
+      error: 'Error al procesar el estado de reparación',
       detalle: error.message
     });
   } finally {
