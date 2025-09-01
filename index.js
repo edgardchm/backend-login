@@ -468,7 +468,9 @@ app.get('/productos', verificarToken, async (req, res) => {
     // Agregar parámetros de paginación
     queryParams.push(parseInt(por_pagina), offset);
 
+    console.log('🚀 Ejecutando query principal...');
     const result = await db.query(query, queryParams);
+    console.log('✅ Query principal ejecutada exitosamente, filas obtenidas:', result.rows.length);
 
     // Query para contar total de registros
     const countQuery = `
@@ -479,8 +481,10 @@ app.get('/productos', verificarToken, async (req, res) => {
       ${whereClause}
     `;
 
+    console.log('🔢 Ejecutando query de conteo...');
     const countResult = await db.query(countQuery, whereConditions.length > 0 ? queryParams.slice(0, -2) : []);
     const totalRegistros = parseInt(countResult.rows[0].total);
+    console.log('✅ Query de conteo ejecutada, total:', totalRegistros);
 
     res.json({
       productos: result.rows,
