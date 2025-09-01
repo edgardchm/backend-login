@@ -467,11 +467,17 @@ app.get('/productos/:parametro', verificarToken, async (req, res) => {
   try {
     const { parametro } = req.params;
     
+    console.log('Parámetro recibido:', parametro);
+    
     // Verificar si el parámetro es un ID numérico
     const esId = !isNaN(parametro) && parseInt(parametro) > 0;
     
+    console.log('¿Es ID?', esId);
+    
     if (esId) {
       // Es un ID, obtener producto específico
+      console.log('Buscando por ID:', parametro);
+      
       const query = `
         SELECT 
           p.id,
@@ -502,6 +508,8 @@ app.get('/productos/:parametro', verificarToken, async (req, res) => {
       res.json(result.rows[0]);
     } else {
       // Es una búsqueda, buscar por nombre o SKU
+      console.log('Buscando por texto:', parametro);
+      
       const query = `
         SELECT 
           p.id,
@@ -533,6 +541,8 @@ app.get('/productos/:parametro', verificarToken, async (req, res) => {
       const skuExacto = parametro;
       const skuPattern = `%${parametro}%`;
       
+      console.log('Parámetros de búsqueda:', { searchPattern, skuExacto, skuPattern });
+      
       const result = await db.query(query, [searchPattern, skuExacto, skuPattern]);
 
       if (result.rows.length === 0) {
@@ -553,8 +563,15 @@ app.get('/productos/:parametro', verificarToken, async (req, res) => {
     }
 
   } catch (error) {
-    console.error('Error obteniendo/buscando producto:', error);
-    res.status(500).json({ error: 'Error al obtener/buscar el producto' });
+    console.error('Error completo:', error);
+    console.error('Stack trace:', error.stack);
+    console.error('Mensaje:', error.message);
+    res.status(500).json({ 
+      error: 'Error al obtener/buscar el producto',
+      detalle: error.message,
+      stack: error.stack,
+      parametro: req.params.parametro
+    });
   }
 });
 
@@ -2217,5 +2234,47 @@ app.delete('/ordenes-servicio/:id', verificarToken, async (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en el puerto ${PORT}`);
+});
+
+// Endpoint de prueba para verificar estructura de tabla
+app.get('/productos/test/estructura', verificarToken, async (req, res) => {
+  try {
+    // Verificar si la tabla existe y su estructura
+    const estructuraQuery = `
+      SELECT column_name, data_type, is_nullable
+      FROM information_schema.columns 
+      WHERE table_name = 'productos'
+      ORDER BY ordinal_position
+    `;
+    
+    const estructuraResult = await db.query(estructuraQuery);
+    
+    // Verificar si hay productos
+    const countQuery = 'SELECT COUNT(*) as total FROM productos';
+    const countResult = await db.query(countQuery);
+    
+    // Verificar si hay marcas y tipos
+    const marcasQuery = 'SELECT COUNT(*) as total FROM marcas';
+    const marcasResult = await db.query(marcasQuery);
+    
+    const tiposQuery = 'SELECT COUNT(*) as total FROM tipos_producto';
+    const tiposResult = await db.query(tiposQuery);
+    
+    res.json({
+      estructura_tabla: estructuraResult.rows,
+      total_productos: parseInt(countResult.rows[0].total),
+      total_marcas: parseInt(marcasResult.rows[0].total),
+      total_tipos: parseInt(tiposResult.rows[0].total),
+      mensaje: 'Estructura de tabla verificada'
+    });
+    
+  } catch (error) {
+    console.error('Error verificando estructura:', error);
+    res.status(500).json({ 
+      error: 'Error verificando estructura de tabla',
+      detalle: error.message,
+      stack: error.stack
+    });
+  }
 });
 
