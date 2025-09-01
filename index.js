@@ -367,30 +367,116 @@ app.get('/productos', verificarToken, async (req, res) => {
   try {
     console.log('🚀 Endpoint /productos llamado');
     
-    // Query muy simple sin filtros - usando columnas reales
+    const {
+      pagina = 1,
+      por_pagina = 10,
+      ordenar_por = 'nombre',
+      orden = 'asc',
+      busqueda = '',
+      marca_id,
+      tipo_id
+    } = req.query;
+    
+    console.log('📋 Parámetros recibidos:', { pagina, por_pagina, ordenar_por, orden, busqueda, marca_id, tipo_id });
+    
+    // Validar parámetros
+    const offset = (parseInt(pagina) - 1) * parseInt(por_pagina);
+    const ordenesValidos = ['nombre', 'sku', 'precio_cliente', 'precio_mayorista'];
+    const direccionesValidas = ['asc', 'desc'];
+    
+    if (!ordenesValidos.includes(ordenar_por)) {
+      return res.status(400).json({ 
+        error: `Campo de ordenamiento inválido. Válidos: ${ordenesValidos.join(', ')}` 
+      });
+    }
+    
+    if (!direccionesValidas.includes(orden.toLowerCase())) {
+      return res.status(400).json({ 
+        error: 'Dirección de ordenamiento inválida. Use: asc o desc' 
+      });
+    }
+    
+    // Construir filtros
+    let whereConditions = [];
+    let queryParams = [];
+    let paramCount = 1;
+    
+    if (busqueda) {
+      whereConditions.push(`p.nombre ILIKE $${paramCount}`);
+      queryParams.push(`%${busqueda}%`);
+      paramCount++;
+    }
+    
+    if (marca_id) {
+      whereConditions.push(`p.marca_id = $${paramCount}`);
+      queryParams.push(marca_id);
+      paramCount++;
+    }
+    
+    if (tipo_id) {
+      whereConditions.push(`p.tipo_id = $${paramCount}`);
+      queryParams.push(tipo_id);
+      paramCount++;
+    }
+    
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+    
+    // Query principal con las columnas reales - SIN LÍMITE FIJO
     const query = `
       SELECT 
         p.id,
-        p.nombre,
         p.sku,
+        p.nombre,
         p.precio_cliente,
         p.precio_mayorista,
         p.marca_id,
-        p.tipo_id
+        p.tipo_id,
+        m.marca,
+        t.nombre AS tipo
       FROM productos p
-      LIMIT 10
+      LEFT JOIN marcas m ON p.marca_id = m.id
+      LEFT JOIN tipos_producto t ON p.tipo_id = t.id
+      ${whereClause}
+      ORDER BY p.${ordenar_por} ${orden.toUpperCase()}
+      LIMIT $${paramCount} OFFSET $${paramCount + 1}
     `;
     
-    console.log('🔍 Query:', query);
+    console.log('🔍 Query construida:', query);
+    console.log('🔍 Parámetros:', queryParams);
     
-    const result = await db.query(query);
+    // Agregar parámetros de paginación
+    queryParams.push(parseInt(por_pagina), offset);
     
+    const result = await db.query(query, queryParams);
     console.log('✅ Query ejecutada, filas obtenidas:', result.rows.length);
+    
+    // Query para contar total
+    const countQuery = `
+      SELECT COUNT(*) as total
+      FROM productos p
+      LEFT JOIN marcas m ON p.marca_id = m.id
+      LEFT JOIN tipos_producto t ON p.tipo_id = t.id
+      ${whereClause}
+    `;
+    
+    const countResult = await db.query(countQuery, whereConditions.length > 0 ? queryParams.slice(0, -2) : []);
+    const totalRegistros = parseInt(countResult.rows[0].total);
     
     res.json({
       productos: result.rows,
-      total: result.rows.length,
-      mensaje: 'Consulta exitosa'
+      paginacion: {
+        pagina: parseInt(pagina),
+        por_pagina: parseInt(por_pagina),
+        total: totalRegistros,
+        total_paginas: Math.ceil(totalRegistros / parseInt(por_pagina))
+      },
+      filtros: {
+        busqueda,
+        marca_id,
+        tipo_id,
+        ordenar_por,
+        orden
+      }
     });
     
   } catch (error) {
