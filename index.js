@@ -367,14 +367,16 @@ app.get('/productos', verificarToken, async (req, res) => {
   try {
     console.log('🚀 Endpoint /productos llamado');
     
-    // Query muy simple sin filtros
+    // Query muy simple sin filtros - usando columnas reales
     const query = `
       SELECT 
         p.id,
         p.nombre,
         p.sku,
-        p.precio,
-        p.stock
+        p.precio_cliente,
+        p.precio_mayorista,
+        p.marca_id,
+        p.tipo_id
       FROM productos p
       LIMIT 10
     `;
