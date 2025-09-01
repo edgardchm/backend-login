@@ -364,6 +364,8 @@ app.get('/productos/test', verificarToken, async (req, res) => {
 
 app.get('/productos', verificarToken, async (req, res) => {
   try {
+    console.log('🚀 Endpoint /productos llamado con query:', req.query);
+    
     const {
       pagina = 1,
       por_pagina = 10,
@@ -373,10 +375,12 @@ app.get('/productos', verificarToken, async (req, res) => {
       marca_id,
       tipo_id
     } = req.query;
+    
+    console.log('📋 Parámetros extraídos:', { pagina, por_pagina, ordenar_por, orden, busqueda, marca_id, tipo_id });
 
-    // Validar parámetros
+    // Validar parámetros - SIMPLIFICADO
     const offset = (parseInt(pagina) - 1) * parseInt(por_pagina);
-    const ordenesValidos = ['nombre', 'sku', 'precio', 'stock', 'marca', 'tipo', 'fecha_creacion'];
+    const ordenesValidos = ['nombre', 'sku', 'precio', 'stock'];
     const direccionesValidas = ['asc', 'desc'];
 
     // Validar que la página y por_pagina sean números válidos
@@ -389,12 +393,14 @@ app.get('/productos', verificarToken, async (req, res) => {
     }
 
     if (!ordenesValidos.includes(ordenar_por)) {
-      return res.status(400).json({ error: 'Campo de ordenamiento inválido' });
+      return res.status(400).json({ error: `Campo de ordenamiento inválido. Válidos: ${ordenesValidos.join(', ')}` });
     }
 
     if (!direccionesValidas.includes(orden.toLowerCase())) {
-      return res.status(400).json({ error: 'Dirección de ordenamiento inválida' });
+      return res.status(400).json({ error: 'Dirección de ordenamiento inválida. Use: asc o desc' });
     }
+    
+    console.log('✅ Validación de parámetros exitosa');
 
     // Construir query base
     let whereConditions = [];
@@ -424,22 +430,7 @@ app.get('/productos', verificarToken, async (req, res) => {
 
     const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
 
-    // Query principal con filtros y paginación - SIMPLIFICADA
-    let orderClause;
-    if (ordenar_por === 'marca') {
-      orderClause = `m.marca ${orden.toUpperCase()}`;
-    } else if (ordenar_por === 'tipo') {
-      orderClause = `t.nombre ${orden.toUpperCase()}`;
-    } else {
-      // Validar que el campo existe en la tabla productos
-      const camposProductos = ['nombre', 'sku', 'precio', 'stock', 'fecha_creacion'];
-      if (!camposProductos.includes(ordenar_por)) {
-        return res.status(400).json({ error: `Campo de ordenamiento '${ordenar_por}' no válido para productos` });
-      }
-      orderClause = `p.${ordenar_por} ${orden.toUpperCase()}`;
-    }
-
-    // Query simplificada para debug
+    // Query principal - ULTRA SIMPLIFICADA
     const query = `
       SELECT 
         p.id,
@@ -450,14 +441,13 @@ app.get('/productos', verificarToken, async (req, res) => {
         p.precio_mayor,
         p.precio_cliente,
         p.stock,
-        p.fecha_creacion,
         m.marca,
         t.nombre AS tipo
       FROM productos p
       LEFT JOIN marcas m ON p.marca_id = m.id
       LEFT JOIN tipos_producto t ON p.tipo_id = t.id
       ${whereClause}
-      ORDER BY ${orderClause}
+      ORDER BY p.${ordenar_por} ${orden.toUpperCase()}
       LIMIT $${paramCount} OFFSET $${paramCount + 1}
     `;
 
