@@ -331,6 +331,37 @@ app.get('/productos/:busqueda', verificarToken, async (req, res) => {
 });
 
 // =================== PRODUCTOS CON PAGINACIÓN Y CRUD ===================
+
+// Endpoint de prueba para verificar la conexión a la base de datos
+app.get('/productos/test', verificarToken, async (req, res) => {
+  try {
+    // Query simple para verificar que la tabla existe
+    const testQuery = `
+      SELECT 
+        COUNT(*) as total_productos,
+        COUNT(DISTINCT marca_id) as total_marcas,
+        COUNT(DISTINCT tipo_id) as total_tipos
+      FROM productos
+    `;
+    
+    const result = await db.query(testQuery);
+    
+    res.json({
+      message: 'Conexión a base de datos exitosa',
+      estadisticas: result.rows[0],
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('Error en test de productos:', error);
+    res.status(500).json({ 
+      error: 'Error en test de productos',
+      detalle: error.message,
+      stack: error.stack
+    });
+  }
+});
+
 app.get('/productos', verificarToken, async (req, res) => {
   try {
     const {
@@ -347,6 +378,15 @@ app.get('/productos', verificarToken, async (req, res) => {
     const offset = (parseInt(pagina) - 1) * parseInt(por_pagina);
     const ordenesValidos = ['nombre', 'sku', 'precio', 'stock', 'marca', 'tipo', 'fecha_creacion'];
     const direccionesValidas = ['asc', 'desc'];
+
+    // Validar que la página y por_pagina sean números válidos
+    if (isNaN(parseInt(pagina)) || parseInt(pagina) < 1) {
+      return res.status(400).json({ error: 'Página debe ser un número mayor a 0' });
+    }
+
+    if (isNaN(parseInt(por_pagina)) || parseInt(por_pagina) < 1 || parseInt(por_pagina) > 100) {
+      return res.status(400).json({ error: 'Por página debe ser un número entre 1 y 100' });
+    }
 
     if (!ordenesValidos.includes(ordenar_por)) {
       return res.status(400).json({ error: 'Campo de ordenamiento inválido' });
@@ -384,28 +424,49 @@ app.get('/productos', verificarToken, async (req, res) => {
 
     const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
 
-    // Query principal con filtros y paginación
+    // Query principal con filtros y paginación - SIMPLIFICADA
+    let orderClause;
+    if (ordenar_por === 'marca') {
+      orderClause = `m.marca ${orden.toUpperCase()}`;
+    } else if (ordenar_por === 'tipo') {
+      orderClause = `t.nombre ${orden.toUpperCase()}`;
+    } else {
+      // Validar que el campo existe en la tabla productos
+      const camposProductos = ['nombre', 'sku', 'precio', 'stock', 'fecha_creacion'];
+      if (!camposProductos.includes(ordenar_por)) {
+        return res.status(400).json({ error: `Campo de ordenamiento '${ordenar_por}' no válido para productos` });
+      }
+      orderClause = `p.${ordenar_por} ${orden.toUpperCase()}`;
+    }
+
+    // Query simplificada para debug
     const query = `
       SELECT 
-        p.*,
-        m.marca AS marca,
-        t.nombre AS tipo,
-        COALESCE(p.stock, 0) as stock
+        p.id,
+        p.nombre,
+        p.sku,
+        p.descripcion,
+        p.precio,
+        p.precio_mayor,
+        p.precio_cliente,
+        p.stock,
+        p.fecha_creacion,
+        m.marca,
+        t.nombre AS tipo
       FROM productos p
       LEFT JOIN marcas m ON p.marca_id = m.id
       LEFT JOIN tipos_producto t ON p.tipo_id = t.id
       ${whereClause}
-      ORDER BY 
-        CASE 
-          WHEN $${paramCount} = 'marca' THEN m.marca
-          WHEN $${paramCount} = 'tipo' THEN t.nombre
-          ELSE p.${ordenar_por}
-        END ${orden.toUpperCase()}
-      LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
+      ORDER BY ${orderClause}
+      LIMIT $${paramCount} OFFSET $${paramCount + 1}
     `;
 
-    // Agregar parámetros de ordenamiento y paginación
-    queryParams.push(ordenar_por, parseInt(por_pagina), offset);
+    console.log('🔍 Query construida:', query);
+    console.log('🔍 Parámetros:', queryParams);
+    console.log('🔍 Order clause:', orderClause);
+
+    // Agregar parámetros de paginación
+    queryParams.push(parseInt(por_pagina), offset);
 
     const result = await db.query(query, queryParams);
 
@@ -418,7 +479,7 @@ app.get('/productos', verificarToken, async (req, res) => {
       ${whereClause}
     `;
 
-    const countResult = await db.query(countQuery, whereConditions.length > 0 ? queryParams.slice(0, -3) : []);
+    const countResult = await db.query(countQuery, whereConditions.length > 0 ? queryParams.slice(0, -2) : []);
     const totalRegistros = parseInt(countResult.rows[0].total);
 
     res.json({
@@ -440,7 +501,14 @@ app.get('/productos', verificarToken, async (req, res) => {
 
   } catch (error) {
     console.error('Error obteniendo productos:', error);
-    res.status(500).json({ error: 'Error al obtener los productos' });
+    console.error('Query params:', queryParams);
+    console.error('Where clause:', whereClause);
+    console.error('Order clause:', orderClause);
+    res.status(500).json({ 
+      error: 'Error al obtener los productos',
+      detalle: error.message,
+      stack: error.stack 
+    });
   }
 });
 
