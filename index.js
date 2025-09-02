@@ -582,6 +582,8 @@ app.put('/productos/:id', verificarToken, async (req, res) => {
       stock
     } = req.body;
 
+    console.log('📦 Actualizando producto:', { id, nombre, sku, precio_cliente, precio_mayorista, stock });
+
     // Verificar si el producto existe
     const productoCheck = await db.query('SELECT id FROM productos WHERE id = $1', [id]);
     if (productoCheck.rows.length === 0) {
@@ -597,6 +599,8 @@ app.put('/productos/:id', verificarToken, async (req, res) => {
     }
 
     // Actualizar producto
+    console.log('🔍 Ejecutando UPDATE con parámetros:', [nombre, descripcion, sku, precio_cliente, precio_mayorista, marca_id, tipo_id, stock, id]);
+    
     const result = await db.query(`
       UPDATE productos 
       SET nombre = COALESCE($1, nombre),
@@ -610,6 +614,8 @@ app.put('/productos/:id', verificarToken, async (req, res) => {
       WHERE id = $9
       RETURNING *
     `, [nombre, descripcion, sku, precio_cliente, precio_mayorista, marca_id, tipo_id, stock, id]);
+
+    console.log('✅ Producto actualizado exitosamente:', result.rows[0]);
 
     // Obtener producto actualizado con información de marca y tipo
     const productoCompleto = await db.query(`
@@ -626,8 +632,18 @@ app.put('/productos/:id', verificarToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error actualizando producto:', error);
-    res.status(500).json({ error: 'Error al actualizar el producto' });
+    console.error('❌ Error actualizando producto:', error);
+    console.error('❌ Detalles del error:', {
+      message: error.message,
+      code: error.code,
+      detail: error.detail,
+      stack: error.stack
+    });
+    res.status(500).json({ 
+      error: 'Error al actualizar el producto',
+      detalle: error.message,
+      codigo: error.code
+    });
   }
 });
 
