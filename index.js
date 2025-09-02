@@ -1901,26 +1901,29 @@ app.patch('/ordenes-servicio/:id/estado-reparacion', verificarToken, async (req,
       return res.status(404).json({ error: 'Orden no encontrada' });
     }
 
-    // SOLUCIÓN TEMPORAL: Solo crear una falla si no existe
-    // El estado_reparacion se calculará dinámicamente en el GET
+    // Verificar si existen fallas para esta orden
     const fallasExistentes = await client.query('SELECT COUNT(*) FROM fallas WHERE orden_id = $1', [id]);
     
     if (parseInt(fallasExistentes.rows[0].count) === 0) {
-      // Si no hay fallas, crear una falla por defecto
+      // Si no hay fallas, crear una falla por defecto con el estado
       await client.query(
-        `INSERT INTO fallas (orden_id, descripcion) VALUES ($1, $2)`,
-        [id, 'Falla general']
+        `INSERT INTO fallas (orden_id, descripcion, estado) VALUES ($1, $2, $3)`,
+        [id, 'Falla general', estado_reparacion]
+      );
+    } else {
+      // Si ya existen fallas, actualizar el estado de todas las fallas de esta orden
+      await client.query(
+        `UPDATE fallas SET estado = $1 WHERE orden_id = $2`,
+        [estado_reparacion, id]
       );
     }
 
     await client.query('COMMIT');
     
     res.json({ 
-      message: 'Estado de reparación procesado correctamente',
+      message: 'Estado de reparación actualizado correctamente',
       orden_id: id,
-      estado_reparacion: estado_reparacion,
-      nota: 'Se creó una falla por defecto. Para almacenar el estado, agregar columna estado a la tabla fallas.',
-      instruccion: 'Ejecutar: ALTER TABLE fallas ADD COLUMN estado VARCHAR(50) DEFAULT \'PENDIENTE\';'
+      estado_reparacion: estado_reparacion
     });
 
   } catch (error) {
