@@ -640,6 +640,8 @@ app.patch('/productos/:id/stock', verificarToken, async (req, res) => {
     const { id } = req.params;
     const { stock, operacion } = req.body;
 
+    console.log('📦 Actualizando stock para producto:', { id, stock, operacion });
+
     // Validar campos requeridos
     if (stock === undefined || stock === null) {
       return res.status(400).json({ error: 'El campo stock es requerido' });
@@ -669,13 +671,29 @@ app.patch('/productos/:id/stock', verificarToken, async (req, res) => {
       nuevoStock = parseInt(stock);
     }
 
-    // Actualizar stock
-    const result = await db.query(`
-      UPDATE productos 
-      SET stock = $1, fecha_actualizacion = NOW()
-      WHERE id = $2
-      RETURNING *
-    `, [nuevoStock, id]);
+    console.log('📊 Cálculo de stock:', { stockActual, nuevoStock, operacion });
+
+    // Actualizar stock - intentar con fecha_actualizacion primero, si falla sin ella
+    let result;
+    try {
+      result = await db.query(`
+        UPDATE productos 
+        SET stock = $1, fecha_actualizacion = NOW()
+        WHERE id = $2
+        RETURNING *
+      `, [nuevoStock, id]);
+    } catch (updateError) {
+      console.log('⚠️ Error con fecha_actualizacion, intentando sin ella:', updateError.message);
+      // Si falla con fecha_actualizacion, intentar sin ella
+      result = await db.query(`
+        UPDATE productos 
+        SET stock = $1
+        WHERE id = $2
+        RETURNING *
+      `, [nuevoStock, id]);
+    }
+
+    console.log('✅ Stock actualizado exitosamente');
 
     res.json({
       message: 'Stock actualizado exitosamente',
@@ -693,8 +711,18 @@ app.patch('/productos/:id/stock', verificarToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error actualizando stock:', error);
-    res.status(500).json({ error: 'Error al actualizar el stock' });
+    console.error('❌ Error actualizando stock:', error);
+    console.error('❌ Detalles del error:', {
+      message: error.message,
+      code: error.code,
+      detail: error.detail,
+      stack: error.stack
+    });
+    res.status(500).json({ 
+      error: 'Error al actualizar el stock',
+      detalle: error.message,
+      codigo: error.code
+    });
   }
 });
 
