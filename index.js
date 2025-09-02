@@ -381,7 +381,7 @@ app.get('/productos', verificarToken, async (req, res) => {
     
     // Validar parámetros
     const offset = (parseInt(pagina) - 1) * parseInt(por_pagina);
-    const ordenesValidos = ['nombre', 'sku', 'precio_cliente', 'precio_mayorista'];
+    const ordenesValidos = ['nombre', 'sku', 'precio_cliente', 'precio_mayorista', 'stock'];
     const direccionesValidas = ['asc', 'desc'];
     
     if (!ordenesValidos.includes(ordenar_por)) {
@@ -431,6 +431,7 @@ app.get('/productos', verificarToken, async (req, res) => {
         p.precio_mayorista,
         p.marca_id,
         p.tipo_id,
+        p.stock,
         m.marca,
         t.nombre AS tipo
       FROM productos p
@@ -517,10 +518,10 @@ app.post('/productos', verificarToken, async (req, res) => {
 
     // Insertar producto
     const result = await db.query(`
-      INSERT INTO productos (nombre, descripcion, sku, precio, precio_mayor, precio_cliente, marca_id, tipo_id, stock, fecha_creacion)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+      INSERT INTO productos (nombre, descripcion, sku, precio_cliente, precio_mayorista, marca_id, tipo_id, stock)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING *
-    `, [nombre, descripcion, sku, precio, precio_mayor, precio_cliente, marca_id, tipo_id, stock]);
+    `, [nombre, descripcion, sku, precio, precio_mayor, marca_id, tipo_id, stock]);
 
     // Obtener producto con información de marca y tipo
     const productoCompleto = await db.query(`
@@ -603,16 +604,14 @@ app.put('/productos/:id', verificarToken, async (req, res) => {
       SET nombre = COALESCE($1, nombre),
           descripcion = COALESCE($2, descripcion),
           sku = COALESCE($3, sku),
-          precio = COALESCE($4, precio),
-          precio_mayor = COALESCE($5, precio_mayor),
-          precio_cliente = COALESCE($6, precio_cliente),
-          marca_id = COALESCE($7, marca_id),
-          tipo_id = COALESCE($8, tipo_id),
-          stock = COALESCE($9, stock),
-          fecha_actualizacion = NOW()
-      WHERE id = $10
+          precio_cliente = COALESCE($4, precio_cliente),
+          precio_mayorista = COALESCE($5, precio_mayorista),
+          marca_id = COALESCE($6, marca_id),
+          tipo_id = COALESCE($7, tipo_id),
+          stock = COALESCE($8, stock)
+      WHERE id = $9
       RETURNING *
-    `, [nombre, descripcion, sku, precio, precio_mayor, precio_cliente, marca_id, tipo_id, stock, id]);
+    `, [nombre, descripcion, sku, precio_cliente, precio_mayor, marca_id, tipo_id, stock, id]);
 
     // Obtener producto actualizado con información de marca y tipo
     const productoCompleto = await db.query(`
@@ -673,25 +672,13 @@ app.patch('/productos/:id/stock', verificarToken, async (req, res) => {
 
     console.log('📊 Cálculo de stock:', { stockActual, nuevoStock, operacion });
 
-    // Actualizar stock - intentar con fecha_actualizacion primero, si falla sin ella
-    let result;
-    try {
-      result = await db.query(`
-        UPDATE productos 
-        SET stock = $1, fecha_actualizacion = NOW()
-        WHERE id = $2
-        RETURNING *
-      `, [nuevoStock, id]);
-    } catch (updateError) {
-      console.log('⚠️ Error con fecha_actualizacion, intentando sin ella:', updateError.message);
-      // Si falla con fecha_actualizacion, intentar sin ella
-      result = await db.query(`
-        UPDATE productos 
-        SET stock = $1
-        WHERE id = $2
-        RETURNING *
-      `, [nuevoStock, id]);
-    }
+    // Actualizar stock
+    const result = await db.query(`
+      UPDATE productos 
+      SET stock = $1
+      WHERE id = $2
+      RETURNING *
+    `, [nuevoStock, id]);
 
     console.log('✅ Stock actualizado exitosamente');
 
