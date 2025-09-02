@@ -634,6 +634,70 @@ app.put('/productos/:id', verificarToken, async (req, res) => {
   }
 });
 
+// Actualizar stock de producto
+app.patch('/productos/:id/stock', verificarToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { stock, operacion } = req.body;
+
+    // Validar campos requeridos
+    if (stock === undefined || stock === null) {
+      return res.status(400).json({ error: 'El campo stock es requerido' });
+    }
+
+    if (operacion && !['agregar', 'quitar', 'establecer'].includes(operacion)) {
+      return res.status(400).json({ error: 'La operación debe ser: agregar, quitar o establecer' });
+    }
+
+    // Verificar si el producto existe y obtener stock actual
+    const productoCheck = await db.query('SELECT id, nombre, sku, stock FROM productos WHERE id = $1', [id]);
+    if (productoCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Producto no encontrado' });
+    }
+
+    const producto = productoCheck.rows[0];
+    const stockActual = parseInt(producto.stock) || 0;
+    let nuevoStock;
+
+    // Calcular nuevo stock según la operación
+    if (operacion === 'agregar') {
+      nuevoStock = stockActual + parseInt(stock);
+    } else if (operacion === 'quitar') {
+      nuevoStock = Math.max(0, stockActual - parseInt(stock)); // No permitir stock negativo
+    } else {
+      // operacion === 'establecer' o sin operación (por defecto)
+      nuevoStock = parseInt(stock);
+    }
+
+    // Actualizar stock
+    const result = await db.query(`
+      UPDATE productos 
+      SET stock = $1, fecha_actualizacion = NOW()
+      WHERE id = $2
+      RETURNING *
+    `, [nuevoStock, id]);
+
+    res.json({
+      message: 'Stock actualizado exitosamente',
+      producto: {
+        id: producto.id,
+        nombre: producto.nombre,
+        sku: producto.sku,
+        stock_anterior: stockActual,
+        stock_nuevo: nuevoStock,
+        operacion: operacion || 'establecer',
+        cantidad_cambiada: operacion === 'agregar' ? parseInt(stock) : 
+                          operacion === 'quitar' ? -parseInt(stock) : 
+                          nuevoStock - stockActual
+      }
+    });
+
+  } catch (error) {
+    console.error('Error actualizando stock:', error);
+    res.status(500).json({ error: 'Error al actualizar el stock' });
+  }
+});
+
 // Eliminar producto
 app.delete('/productos/:id', verificarToken, async (req, res) => {
   try {
