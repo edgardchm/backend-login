@@ -495,7 +495,6 @@ app.post('/productos', verificarToken, async (req, res) => {
   try {
     const {
       nombre,
-      descripcion,
       sku,
       precio_cliente,
       precio_mayorista,
@@ -517,10 +516,10 @@ app.post('/productos', verificarToken, async (req, res) => {
 
     // Insertar producto
     const result = await db.query(`
-      INSERT INTO productos (nombre, descripcion, sku, precio_cliente, precio_mayorista, marca_id, tipo_id, stock)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      INSERT INTO productos (nombre, sku, precio_cliente, precio_mayorista, marca_id, tipo_id, stock)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING *
-    `, [nombre, descripcion, sku, precio_cliente, precio_mayorista, marca_id, tipo_id, stock]);
+    `, [nombre, sku, precio_cliente, precio_mayorista, marca_id, tipo_id, stock]);
 
     // Obtener producto con información de marca y tipo
     const productoCompleto = await db.query(`
@@ -573,12 +572,11 @@ app.put('/productos/:id', verificarToken, async (req, res) => {
     const { id } = req.params;
     const {
       nombre,
-      descripcion,
       sku,
       precio_cliente,
       precio_mayorista,
-      marca_id,
-      tipo_id,
+      marca_id = null,
+      tipo_id = null,
       stock
     } = req.body;
 
@@ -599,21 +597,72 @@ app.put('/productos/:id', verificarToken, async (req, res) => {
     }
 
     // Actualizar producto
-    console.log('🔍 Ejecutando UPDATE con parámetros:', [nombre, descripcion, sku, precio_cliente, precio_mayorista, marca_id, tipo_id, stock, id]);
+    console.log('🔍 Ejecutando UPDATE con parámetros:', { nombre, sku, precio_cliente, precio_mayorista, marca_id, tipo_id, stock, id });
     
-    const result = await db.query(`
+    // Construir la consulta dinámicamente solo con los campos que se están enviando
+    let updateFields = [];
+    let updateValues = [];
+    let paramCount = 1;
+
+    if (nombre !== undefined) {
+      updateFields.push(`nombre = $${paramCount}`);
+      updateValues.push(nombre);
+      paramCount++;
+    }
+    
+    if (sku !== undefined) {
+      updateFields.push(`sku = $${paramCount}`);
+      updateValues.push(sku);
+      paramCount++;
+    }
+    
+    if (precio_cliente !== undefined) {
+      updateFields.push(`precio_cliente = $${paramCount}`);
+      updateValues.push(precio_cliente);
+      paramCount++;
+    }
+    
+    if (precio_mayorista !== undefined) {
+      updateFields.push(`precio_mayorista = $${paramCount}`);
+      updateValues.push(precio_mayorista);
+      paramCount++;
+    }
+    
+    if (marca_id !== null && marca_id !== undefined) {
+      updateFields.push(`marca_id = $${paramCount}`);
+      updateValues.push(marca_id);
+      paramCount++;
+    }
+    
+    if (tipo_id !== null && tipo_id !== undefined) {
+      updateFields.push(`tipo_id = $${paramCount}`);
+      updateValues.push(tipo_id);
+      paramCount++;
+    }
+    
+    if (stock !== undefined) {
+      updateFields.push(`stock = $${paramCount}`);
+      updateValues.push(stock);
+      paramCount++;
+    }
+
+    if (updateFields.length === 0) {
+      return res.status(400).json({ error: 'No hay campos para actualizar' });
+    }
+
+    updateValues.push(id); // Agregar el ID al final
+
+    const updateQuery = `
       UPDATE productos 
-      SET nombre = COALESCE($1, nombre),
-          descripcion = COALESCE($2, descripcion),
-          sku = COALESCE($3, sku),
-          precio_cliente = COALESCE($4, precio_cliente),
-          precio_mayorista = COALESCE($5, precio_mayorista),
-          marca_id = COALESCE($6, marca_id),
-          tipo_id = COALESCE($7, tipo_id),
-          stock = COALESCE($8, stock)
-      WHERE id = $9
+      SET ${updateFields.join(', ')}
+      WHERE id = $${paramCount}
       RETURNING *
-    `, [nombre, descripcion, sku, precio_cliente, precio_mayorista, marca_id, tipo_id, stock, id]);
+    `;
+
+    console.log('🔍 Query final:', updateQuery);
+    console.log('🔍 Valores:', updateValues);
+
+    const result = await db.query(updateQuery, updateValues);
 
     console.log('✅ Producto actualizado exitosamente:', result.rows[0]);
 
