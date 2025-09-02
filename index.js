@@ -497,17 +497,16 @@ app.post('/productos', verificarToken, async (req, res) => {
       nombre,
       descripcion,
       sku,
-      precio,
-      precio_mayor,
       precio_cliente,
+      precio_mayorista,
       marca_id,
       tipo_id,
       stock = 0
     } = req.body;
 
     // Validar campos requeridos
-    if (!nombre || !sku || !precio) {
-      return res.status(400).json({ error: 'Nombre, SKU y precio son campos requeridos' });
+    if (!nombre || !sku || !precio_cliente) {
+      return res.status(400).json({ error: 'Nombre, SKU y precio_cliente son campos requeridos' });
     }
 
     // Verificar si el SKU ya existe
@@ -521,7 +520,7 @@ app.post('/productos', verificarToken, async (req, res) => {
       INSERT INTO productos (nombre, descripcion, sku, precio_cliente, precio_mayorista, marca_id, tipo_id, stock)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING *
-    `, [nombre, descripcion, sku, precio, precio_mayor, marca_id, tipo_id, stock]);
+    `, [nombre, descripcion, sku, precio_cliente, precio_mayorista, marca_id, tipo_id, stock]);
 
     // Obtener producto con información de marca y tipo
     const productoCompleto = await db.query(`
@@ -576,9 +575,8 @@ app.put('/productos/:id', verificarToken, async (req, res) => {
       nombre,
       descripcion,
       sku,
-      precio,
-      precio_mayor,
       precio_cliente,
+      precio_mayorista,
       marca_id,
       tipo_id,
       stock
@@ -611,7 +609,7 @@ app.put('/productos/:id', verificarToken, async (req, res) => {
           stock = COALESCE($8, stock)
       WHERE id = $9
       RETURNING *
-    `, [nombre, descripcion, sku, precio_cliente, precio_mayor, marca_id, tipo_id, stock, id]);
+    `, [nombre, descripcion, sku, precio_cliente, precio_mayorista, marca_id, tipo_id, stock, id]);
 
     // Obtener producto actualizado con información de marca y tipo
     const productoCompleto = await db.query(`
