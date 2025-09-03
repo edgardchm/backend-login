@@ -111,11 +111,51 @@ app.post('/repuestos', verificarToken, async (req, res) => {
 app.delete('/repuestos/:id', verificarToken, async (req, res) => {
   const { id } = req.params;
   try {
+    // Verificar si el tipo de repuesto existe
+    const tipoCheck = await db.query('SELECT id, nombre FROM tipos_repuestos WHERE id = $1', [id]);
+    if (tipoCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Tipo de repuesto no encontrado' });
+    }
+
+    // Verificar si hay repuestos que usan este tipo
+    const repuestosCheck = await db.query('SELECT COUNT(*) as count FROM repuestos WHERE tipo_repuesto_id = $1', [id]);
+    const repuestosCount = parseInt(repuestosCheck.rows[0].count);
+    
+    if (repuestosCount > 0) {
+      return res.status(400).json({ 
+        error: 'No se puede eliminar el tipo de repuesto',
+        detalle: `Existen ${repuestosCount} repuestos que usan este tipo. Elimine primero los repuestos asociados.`,
+        tipo_repuesto: tipoCheck.rows[0].nombre,
+        repuestos_asociados: repuestosCount
+      });
+    }
+
+    // Verificar si hay relaciones en marca_tipo_repuesto
+    const marcaTipoCheck = await db.query('SELECT COUNT(*) as count FROM marca_tipo_repuesto WHERE tipo_repuesto_id = $1', [id]);
+    const marcaTipoCount = parseInt(marcaTipoCheck.rows[0].count);
+    
+    if (marcaTipoCount > 0) {
+      // Eliminar las relaciones primero
+      await db.query('DELETE FROM marca_tipo_repuesto WHERE tipo_repuesto_id = $1', [id]);
+    }
+
+    // Ahora eliminar el tipo de repuesto
     await db.query('DELETE FROM tipos_repuestos WHERE id = $1', [id]);
-    res.json({ message: 'Repuesto eliminado' });
+    
+    res.json({ 
+      message: 'Tipo de repuesto eliminado exitosamente',
+      tipo_eliminado: {
+        id: parseInt(id),
+        nombre: tipoCheck.rows[0].nombre
+      }
+    });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error al eliminar el repuesto' });
+    console.error('Error detallado al eliminar tipo de repuesto:', err);
+    res.status(500).json({ 
+      error: 'Error al eliminar el tipo de repuesto',
+      detalle: err.message,
+      codigo: err.code
+    });
   }
 });
 
