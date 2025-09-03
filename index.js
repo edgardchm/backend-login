@@ -234,7 +234,8 @@ app.get('/repuestos-marca', verificarToken, async (req, res) => {
   }
 });
 
-app.post('/repuestos-marca', verificarToken, async (req, res) => {
+// Función para crear repuesto (reutilizable)
+const crearRepuesto = async (req, res) => {
   const { nombre, descripcion, precio, precio_mayor, precio_cliente, tipo_repuesto_id, marca_id, stock } = req.body;
 
   try {
@@ -260,7 +261,13 @@ app.post('/repuestos-marca', verificarToken, async (req, res) => {
     console.error('Error al crear el repuesto:', err);
     res.status(500).json({ error: 'Error al crear el repuesto' });
   }
-});
+};
+
+// Endpoint con guión (original)
+app.post('/repuestos-marca', verificarToken, crearRepuesto);
+
+// Endpoint con barra (nuevo para compatibilidad)
+app.post('/repuestos/marca', verificarToken, crearRepuesto);
 
 app.delete('/repuestos-marca/:id', verificarToken, async (req, res) => {
   const { id } = req.params;
