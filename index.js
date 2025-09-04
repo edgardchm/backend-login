@@ -74,6 +74,84 @@ app.post('/login', async (req, res) => {
   }
 });
 
+// =================== FORGOT PASSWORD (SIN AUTENTICACIÓN) ===================
+// Endpoint para cambiar contraseña sin autenticación (usando solo email)
+app.put('/usuarios/forgot-password', async (req, res) => {
+  console.log('🔓 Endpoint forgot-password llamado - NO requiere autenticación');
+  console.log('📧 Email recibido:', req.body.email);
+  
+  const { email, nueva_password, confirmar_password } = req.body;
+
+  try {
+    // Validar que se envíen todos los campos requeridos
+    if (!email || !nueva_password || !confirmar_password) {
+      return res.status(400).json({ 
+        error: 'Se requieren los campos email, nueva_password y confirmar_password' 
+      });
+    }
+
+    // Validar formato de email básico
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ 
+        error: 'Formato de email inválido' 
+      });
+    }
+
+    // Validar que las contraseñas coincidan
+    if (nueva_password !== confirmar_password) {
+      return res.status(400).json({ 
+        error: 'Las contraseñas no coinciden' 
+      });
+    }
+
+    // Validar longitud mínima de contraseña
+    if (nueva_password.length < 6) {
+      return res.status(400).json({ 
+        error: 'La contraseña debe tener al menos 6 caracteres' 
+      });
+    }
+
+    // Verificar que el usuario existe
+    const usuarioCheck = await db.query('SELECT id, nombre, email FROM usuarios WHERE email = $1', [email]);
+    if (usuarioCheck.rows.length === 0) {
+      return res.status(404).json({ 
+        error: 'No existe un usuario con ese email' 
+      });
+    }
+
+    // Encriptar la nueva contraseña
+    const saltRounds = 10;
+    const nueva_password_hash = await bcrypt.hash(nueva_password, saltRounds);
+
+    // Actualizar la contraseña en la base de datos
+    const result = await db.query(
+      `UPDATE usuarios 
+       SET password_hash = $1, actualizado_en = NOW() 
+       WHERE email = $2
+       RETURNING id, nombre, email, rol`,
+      [nueva_password_hash, email]
+    );
+
+    res.json({ 
+      message: 'Contraseña actualizada exitosamente',
+      usuario: {
+        id: result.rows[0].id,
+        nombre: result.rows[0].nombre,
+        email: result.rows[0].email,
+        rol: result.rows[0].rol
+      }
+    });
+
+  } catch (error) {
+    console.error('Error al cambiar contraseña:', error);
+    res.status(500).json({ 
+      error: 'Error al cambiar la contraseña',
+      detalle: error.message 
+    });
+  }
+});
+
 // =================== TIPO DE REPUESTOS ===================
 app.get('/repuestos', verificarToken, async (req, res) => {
   try {
@@ -1658,83 +1736,6 @@ app.put('/usuarios/:id/password', verificarToken, async (req, res) => {
 // Endpoint de prueba sin autenticación
 app.get('/test-no-auth', async (req, res) => {
   res.json({ message: 'Este endpoint no requiere autenticación', timestamp: new Date().toISOString() });
-});
-
-// Endpoint para cambiar contraseña sin autenticación (usando solo email)
-app.put('/usuarios/forgot-password', async (req, res) => {
-  console.log('🔓 Endpoint forgot-password llamado - NO requiere autenticación');
-  console.log('📧 Email recibido:', req.body.email);
-  
-  const { email, nueva_password, confirmar_password } = req.body;
-
-  try {
-    // Validar que se envíen todos los campos requeridos
-    if (!email || !nueva_password || !confirmar_password) {
-      return res.status(400).json({ 
-        error: 'Se requieren los campos email, nueva_password y confirmar_password' 
-      });
-    }
-
-    // Validar formato de email básico
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({ 
-        error: 'Formato de email inválido' 
-      });
-    }
-
-    // Validar que las contraseñas coincidan
-    if (nueva_password !== confirmar_password) {
-      return res.status(400).json({ 
-        error: 'Las contraseñas no coinciden' 
-      });
-    }
-
-    // Validar longitud mínima de contraseña
-    if (nueva_password.length < 6) {
-      return res.status(400).json({ 
-        error: 'La contraseña debe tener al menos 6 caracteres' 
-      });
-    }
-
-    // Verificar que el usuario existe
-    const usuarioCheck = await db.query('SELECT id, nombre, email FROM usuarios WHERE email = $1', [email]);
-    if (usuarioCheck.rows.length === 0) {
-      return res.status(404).json({ 
-        error: 'No existe un usuario con ese email' 
-      });
-    }
-
-    // Encriptar la nueva contraseña
-    const saltRounds = 10;
-    const nueva_password_hash = await bcrypt.hash(nueva_password, saltRounds);
-
-    // Actualizar la contraseña en la base de datos
-    const result = await db.query(
-      `UPDATE usuarios 
-       SET password_hash = $1, actualizado_en = NOW() 
-       WHERE email = $2
-       RETURNING id, nombre, email, rol`,
-      [nueva_password_hash, email]
-    );
-
-    res.json({ 
-      message: 'Contraseña actualizada exitosamente',
-      usuario: {
-        id: result.rows[0].id,
-        nombre: result.rows[0].nombre,
-        email: result.rows[0].email,
-        rol: result.rows[0].rol
-      }
-    });
-
-  } catch (error) {
-    console.error('Error al cambiar contraseña:', error);
-    res.status(500).json({ 
-      error: 'Error al cambiar la contraseña',
-      detalle: error.message 
-    });
-  }
 });
 
 // Endpoint para resetear contraseña (solo para administradores)
