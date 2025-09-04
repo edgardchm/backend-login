@@ -1588,6 +1588,217 @@ app.delete('/usuarios/:id', verificarToken, async (req, res) => {
   }
 });
 
+// Endpoint para cambiar contraseña de usuario
+app.put('/usuarios/:id/password', verificarToken, async (req, res) => {
+  const { id } = req.params;
+  const { nueva_password, confirmar_password, email } = req.body;
+
+  try {
+    // Validar que se envíen todos los campos requeridos
+    if (!nueva_password || !confirmar_password || !email) {
+      return res.status(400).json({ 
+        error: 'Se requieren los campos nueva_password, confirmar_password y email' 
+      });
+    }
+
+    // Validar que las contraseñas coincidan
+    if (nueva_password !== confirmar_password) {
+      return res.status(400).json({ 
+        error: 'Las contraseñas no coinciden' 
+      });
+    }
+
+    // Validar longitud mínima de contraseña
+    if (nueva_password.length < 6) {
+      return res.status(400).json({ 
+        error: 'La contraseña debe tener al menos 6 caracteres' 
+      });
+    }
+
+    // Verificar que el usuario existe y que el email coincida
+    const usuarioCheck = await db.query('SELECT id, nombre, email FROM usuarios WHERE id = $1 AND email = $2', [id, email]);
+    if (usuarioCheck.rows.length === 0) {
+      return res.status(404).json({ 
+        error: 'Usuario no encontrado o email no coincide con el ID proporcionado' 
+      });
+    }
+
+    // Encriptar la nueva contraseña
+    const saltRounds = 10;
+    const nueva_password_hash = await bcrypt.hash(nueva_password, saltRounds);
+
+    // Actualizar la contraseña en la base de datos
+    const result = await db.query(
+      `UPDATE usuarios 
+       SET password_hash = $1, actualizado_en = NOW() 
+       WHERE id = $2 AND email = $3
+       RETURNING id, nombre, email, rol`,
+      [nueva_password_hash, id, email]
+    );
+
+    res.json({ 
+      message: 'Contraseña actualizada exitosamente',
+      usuario: {
+        id: result.rows[0].id,
+        nombre: result.rows[0].nombre,
+        email: result.rows[0].email,
+        rol: result.rows[0].rol
+      }
+    });
+
+  } catch (error) {
+    console.error('Error al cambiar contraseña:', error);
+    res.status(500).json({ 
+      error: 'Error al cambiar la contraseña',
+      detalle: error.message 
+    });
+  }
+});
+
+// Endpoint para cambiar contraseña sin autenticación (usando solo email)
+app.put('/usuarios/forgot-password', async (req, res) => {
+  const { email, nueva_password, confirmar_password } = req.body;
+
+  try {
+    // Validar que se envíen todos los campos requeridos
+    if (!email || !nueva_password || !confirmar_password) {
+      return res.status(400).json({ 
+        error: 'Se requieren los campos email, nueva_password y confirmar_password' 
+      });
+    }
+
+    // Validar formato de email básico
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ 
+        error: 'Formato de email inválido' 
+      });
+    }
+
+    // Validar que las contraseñas coincidan
+    if (nueva_password !== confirmar_password) {
+      return res.status(400).json({ 
+        error: 'Las contraseñas no coinciden' 
+      });
+    }
+
+    // Validar longitud mínima de contraseña
+    if (nueva_password.length < 6) {
+      return res.status(400).json({ 
+        error: 'La contraseña debe tener al menos 6 caracteres' 
+      });
+    }
+
+    // Verificar que el usuario existe
+    const usuarioCheck = await db.query('SELECT id, nombre, email FROM usuarios WHERE email = $1', [email]);
+    if (usuarioCheck.rows.length === 0) {
+      return res.status(404).json({ 
+        error: 'No existe un usuario con ese email' 
+      });
+    }
+
+    // Encriptar la nueva contraseña
+    const saltRounds = 10;
+    const nueva_password_hash = await bcrypt.hash(nueva_password, saltRounds);
+
+    // Actualizar la contraseña en la base de datos
+    const result = await db.query(
+      `UPDATE usuarios 
+       SET password_hash = $1, actualizado_en = NOW() 
+       WHERE email = $2
+       RETURNING id, nombre, email, rol`,
+      [nueva_password_hash, email]
+    );
+
+    res.json({ 
+      message: 'Contraseña actualizada exitosamente',
+      usuario: {
+        id: result.rows[0].id,
+        nombre: result.rows[0].nombre,
+        email: result.rows[0].email,
+        rol: result.rows[0].rol
+      }
+    });
+
+  } catch (error) {
+    console.error('Error al cambiar contraseña:', error);
+    res.status(500).json({ 
+      error: 'Error al cambiar la contraseña',
+      detalle: error.message 
+    });
+  }
+});
+
+// Endpoint para resetear contraseña (solo para administradores)
+app.put('/usuarios/:id/reset-password', verificarToken, async (req, res) => {
+  const { id } = req.params;
+  const { nueva_password } = req.body;
+
+  try {
+    // Verificar que el usuario que hace la petición sea administrador
+    if (req.user.rol !== 'admin') {
+      return res.status(403).json({ 
+        error: 'Solo los administradores pueden resetear contraseñas' 
+      });
+    }
+
+    // Validar que se envíe la nueva contraseña
+    if (!nueva_password) {
+      return res.status(400).json({ 
+        error: 'Se requiere el campo nueva_password' 
+      });
+    }
+
+    // Validar longitud mínima de contraseña
+    if (nueva_password.length < 6) {
+      return res.status(400).json({ 
+        error: 'La contraseña debe tener al menos 6 caracteres' 
+      });
+    }
+
+    // Verificar que el usuario existe
+    const usuarioCheck = await db.query('SELECT id, nombre, email FROM usuarios WHERE id = $1', [id]);
+    if (usuarioCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+
+    // Encriptar la nueva contraseña
+    const saltRounds = 10;
+    const nueva_password_hash = await bcrypt.hash(nueva_password, saltRounds);
+
+    // Actualizar la contraseña en la base de datos
+    const result = await db.query(
+      `UPDATE usuarios 
+       SET password_hash = $1, actualizado_en = NOW() 
+       WHERE id = $2 
+       RETURNING id, nombre, email, rol`,
+      [nueva_password_hash, id]
+    );
+
+    res.json({ 
+      message: 'Contraseña reseteada exitosamente por administrador',
+      usuario: {
+        id: result.rows[0].id,
+        nombre: result.rows[0].nombre,
+        email: result.rows[0].email,
+        rol: result.rows[0].rol
+      },
+      reseteado_por: {
+        id: req.user.id,
+        nombre: req.user.nombre,
+        email: req.user.email
+      }
+    });
+
+  } catch (error) {
+    console.error('Error al resetear contraseña:', error);
+    res.status(500).json({ 
+      error: 'Error al resetear la contraseña',
+      detalle: error.message 
+    });
+  }
+});
+
 // =================== TIPOS DE EQUIPO ===================
 app.get('/tipos-equipo', verificarToken, async (req, res) => {
   try {
