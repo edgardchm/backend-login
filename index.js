@@ -1655,8 +1655,16 @@ app.put('/usuarios/:id/password', verificarToken, async (req, res) => {
   }
 });
 
+// Endpoint de prueba sin autenticación
+app.get('/test-no-auth', async (req, res) => {
+  res.json({ message: 'Este endpoint no requiere autenticación', timestamp: new Date().toISOString() });
+});
+
 // Endpoint para cambiar contraseña sin autenticación (usando solo email)
 app.put('/usuarios/forgot-password', async (req, res) => {
+  console.log('🔓 Endpoint forgot-password llamado - NO requiere autenticación');
+  console.log('📧 Email recibido:', req.body.email);
+  
   const { email, nueva_password, confirmar_password } = req.body;
 
   try {
