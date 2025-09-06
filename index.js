@@ -2006,8 +2006,8 @@ app.get('/modelos', verificarToken, async (req, res) => {
   }
 });
 
-// Obtener modelos por marca específica
-app.get('/modelos/marca/:marca_id', verificarToken, async (req, res) => {
+// Obtener modelos por marca específica (desde órdenes de servicio - DEPRECADO)
+app.get('/modelos/marca-ordenes/:marca_id', verificarToken, async (req, res) => {
   try {
     const { marca_id } = req.params;
     const { limite = 20 } = req.query;
