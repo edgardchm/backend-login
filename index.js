@@ -2585,6 +2585,29 @@ app.post('/ordenes-servicio', verificarToken, async (req, res) => {
       }
     }
 
+    // Sincronizar modelo con la tabla de modelos si se proporciona
+    if (modelo && modelo.trim() !== '') {
+      try {
+        // Verificar si el modelo ya existe para esta marca
+        const modeloExistente = await client.query(
+          'SELECT id FROM modelos WHERE marca_id = $1 AND nombre = $2',
+          [marca_id, modelo.trim()]
+        );
+
+        // Si no existe, crearlo
+        if (modeloExistente.rows.length === 0) {
+          await client.query(`
+            INSERT INTO modelos (nombre, marca_id, tipo_equipo_id) 
+            VALUES ($1, $2, $3) 
+            ON CONFLICT (nombre, marca_id) DO NOTHING
+          `, [modelo.trim(), marca_id, tipo_equipo_id]);
+        }
+      } catch (error) {
+        console.log('Error sincronizando modelo (no crítico):', error.message);
+        // No fallar la orden por este error
+      }
+    }
+
     // Insert orden principal
     const insertOrdenText = `
       INSERT INTO ordenes_servicio (
