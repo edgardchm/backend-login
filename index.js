@@ -1933,6 +1933,252 @@ app.put('/usuarios/:id/reset-password', verificarToken, async (req, res) => {
   }
 });
 
+// =================== MODELOS ===================
+// Obtener todos los modelos únicos
+app.get('/modelos', verificarToken, async (req, res) => {
+  try {
+    const { marca_id, tipo_equipo_id, busqueda, limite = 50 } = req.query;
+    
+    let whereConditions = [];
+    let queryParams = [];
+    let paramCount = 1;
+    
+    // Filtro por marca
+    if (marca_id) {
+      whereConditions.push(`os.marca_id = $${paramCount}`);
+      queryParams.push(marca_id);
+      paramCount++;
+    }
+    
+    // Filtro por tipo de equipo
+    if (tipo_equipo_id) {
+      whereConditions.push(`os.tipo_equipo_id = $${paramCount}`);
+      queryParams.push(tipo_equipo_id);
+      paramCount++;
+    }
+    
+    // Filtro por búsqueda de texto
+    if (busqueda) {
+      whereConditions.push(`os.modelo ILIKE $${paramCount}`);
+      queryParams.push(`%${busqueda}%`);
+      paramCount++;
+    }
+    
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+    
+    const query = `
+      SELECT 
+        os.modelo,
+        COUNT(*) as total_ordenes,
+        m.marca,
+        te.nombre as tipo_equipo,
+        MAX(os.fecha_ingreso) as ultima_orden,
+        MIN(os.fecha_ingreso) as primera_orden
+      FROM ordenes_servicio os
+      LEFT JOIN marcas m ON os.marca_id = m.id
+      LEFT JOIN tipos_equipo te ON os.tipo_equipo_id = te.id
+      ${whereClause}
+      AND os.modelo IS NOT NULL 
+      AND os.modelo != ''
+      GROUP BY os.modelo, m.marca, te.nombre
+      ORDER BY total_ordenes DESC, os.modelo ASC
+      LIMIT $${paramCount}
+    `;
+    
+    queryParams.push(parseInt(limite));
+    
+    const result = await db.query(query, queryParams);
+    
+    res.json({
+      modelos: result.rows,
+      total: result.rows.length,
+      filtros: {
+        marca_id,
+        tipo_equipo_id,
+        busqueda,
+        limite: parseInt(limite)
+      }
+    });
+    
+  } catch (err) {
+    console.error('Error obteniendo modelos:', err);
+    res.status(500).json({ error: 'Error al obtener los modelos' });
+  }
+});
+
+// Obtener modelos por marca específica
+app.get('/modelos/marca/:marca_id', verificarToken, async (req, res) => {
+  try {
+    const { marca_id } = req.params;
+    const { limite = 20 } = req.query;
+    
+    const result = await db.query(`
+      SELECT 
+        os.modelo,
+        COUNT(*) as total_ordenes,
+        m.marca,
+        te.nombre as tipo_equipo,
+        MAX(os.fecha_ingreso) as ultima_orden
+      FROM ordenes_servicio os
+      LEFT JOIN marcas m ON os.marca_id = m.id
+      LEFT JOIN tipos_equipo te ON os.tipo_equipo_id = te.id
+      WHERE os.marca_id = $1 
+        AND os.modelo IS NOT NULL 
+        AND os.modelo != ''
+      GROUP BY os.modelo, m.marca, te.nombre
+      ORDER BY total_ordenes DESC, os.modelo ASC
+      LIMIT $2
+    `, [marca_id, parseInt(limite)]);
+    
+    res.json({
+      marca_id: parseInt(marca_id),
+      modelos: result.rows,
+      total: result.rows.length
+    });
+    
+  } catch (err) {
+    console.error('Error obteniendo modelos por marca:', err);
+    res.status(500).json({ error: 'Error al obtener los modelos de la marca' });
+  }
+});
+
+// Buscar modelos con autocompletado
+app.get('/modelos/buscar', verificarToken, async (req, res) => {
+  try {
+    const { q, marca_id, limite = 10 } = req.query;
+    
+    if (!q || q.trim().length < 2) {
+      return res.status(400).json({ error: 'La búsqueda debe tener al menos 2 caracteres' });
+    }
+    
+    let whereConditions = ['os.modelo ILIKE $1', 'os.modelo IS NOT NULL', 'os.modelo != \'\''];
+    let queryParams = [`%${q.trim()}%`];
+    let paramCount = 2;
+    
+    if (marca_id) {
+      whereConditions.push(`os.marca_id = $${paramCount}`);
+      queryParams.push(marca_id);
+      paramCount++;
+    }
+    
+    const result = await db.query(`
+      SELECT DISTINCT
+        os.modelo,
+        m.marca,
+        te.nombre as tipo_equipo,
+        COUNT(*) as total_ordenes
+      FROM ordenes_servicio os
+      LEFT JOIN marcas m ON os.marca_id = m.id
+      LEFT JOIN tipos_equipo te ON os.tipo_equipo_id = te.id
+      WHERE ${whereConditions.join(' AND ')}
+      GROUP BY os.modelo, m.marca, te.nombre
+      ORDER BY 
+        CASE 
+          WHEN os.modelo ILIKE $1 THEN 1
+          ELSE 2
+        END,
+        total_ordenes DESC,
+        os.modelo ASC
+      LIMIT $${paramCount}
+    `, [...queryParams, parseInt(limite)]);
+    
+    res.json({
+      busqueda: q.trim(),
+      modelos: result.rows,
+      total: result.rows.length
+    });
+    
+  } catch (err) {
+    console.error('Error buscando modelos:', err);
+    res.status(500).json({ error: 'Error al buscar modelos' });
+  }
+});
+
+// Estadísticas de modelos
+app.get('/modelos/estadisticas', verificarToken, async (req, res) => {
+  try {
+    const { marca_id, tipo_equipo_id, fecha_inicio, fecha_fin } = req.query;
+    
+    let whereConditions = ['os.modelo IS NOT NULL', 'os.modelo != \'\''];
+    let queryParams = [];
+    let paramCount = 1;
+    
+    if (marca_id) {
+      whereConditions.push(`os.marca_id = $${paramCount}`);
+      queryParams.push(marca_id);
+      paramCount++;
+    }
+    
+    if (tipo_equipo_id) {
+      whereConditions.push(`os.tipo_equipo_id = $${paramCount}`);
+      queryParams.push(tipo_equipo_id);
+      paramCount++;
+    }
+    
+    if (fecha_inicio) {
+      whereConditions.push(`DATE(os.fecha_ingreso) >= $${paramCount}`);
+      queryParams.push(fecha_inicio);
+      paramCount++;
+    }
+    
+    if (fecha_fin) {
+      whereConditions.push(`DATE(os.fecha_ingreso) <= $${paramCount}`);
+      queryParams.push(fecha_fin);
+      paramCount++;
+    }
+    
+    const whereClause = whereConditions.join(' AND ');
+    
+    // Top 10 modelos más frecuentes
+    const topModelosQuery = `
+      SELECT 
+        os.modelo,
+        m.marca,
+        te.nombre as tipo_equipo,
+        COUNT(*) as total_ordenes,
+        ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER(), 2) as porcentaje
+      FROM ordenes_servicio os
+      LEFT JOIN marcas m ON os.marca_id = m.id
+      LEFT JOIN tipos_equipo te ON os.tipo_equipo_id = te.id
+      WHERE ${whereClause}
+      GROUP BY os.modelo, m.marca, te.nombre
+      ORDER BY total_ordenes DESC
+      LIMIT 10
+    `;
+    
+    // Estadísticas generales
+    const statsQuery = `
+      SELECT 
+        COUNT(DISTINCT os.modelo) as total_modelos_unicos,
+        COUNT(*) as total_ordenes_con_modelo,
+        COUNT(DISTINCT os.marca_id) as marcas_con_modelos,
+        COUNT(DISTINCT os.tipo_equipo_id) as tipos_con_modelos
+      FROM ordenes_servicio os
+      WHERE ${whereClause}
+    `;
+    
+    const [topModelosResult, statsResult] = await Promise.all([
+      db.query(topModelosQuery, queryParams),
+      db.query(statsQuery, queryParams)
+    ]);
+    
+    res.json({
+      estadisticas_generales: statsResult.rows[0],
+      top_modelos: topModelosResult.rows,
+      filtros: {
+        marca_id,
+        tipo_equipo_id,
+        fecha_inicio,
+        fecha_fin
+      }
+    });
+    
+  } catch (err) {
+    console.error('Error obteniendo estadísticas de modelos:', err);
+    res.status(500).json({ error: 'Error al obtener estadísticas de modelos' });
+  }
+});
+
 // =================== TIPOS DE EQUIPO ===================
 app.get('/tipos-equipo', verificarToken, async (req, res) => {
   try {
