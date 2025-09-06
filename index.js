@@ -250,14 +250,34 @@ app.get('/marcas', verificarToken, async (req, res) => {
 
 app.post('/marcas', verificarToken, async (req, res) => {
   const { marca } = req.body;
+  
+  if (!marca || marca.trim() === '') {
+    return res.status(400).json({ error: 'El nombre de la marca es requerido' });
+  }
+
   try {
+    // Verificar si la marca ya existe
+    const marcaExistente = await db.query('SELECT * FROM marcas WHERE marca = $1', [marca.trim()]);
+    
+    if (marcaExistente.rows.length > 0) {
+      return res.status(409).json({ 
+        error: 'La marca ya existe',
+        marca: marcaExistente.rows[0]
+      });
+    }
+
+    // Crear la nueva marca
     const result = await db.query(
       'INSERT INTO marcas (marca) VALUES ($1) RETURNING *',
-      [marca]
+      [marca.trim()]
     );
-    res.status(201).json(result.rows[0]);
+    
+    res.status(201).json({
+      message: 'Marca creada exitosamente',
+      marca: result.rows[0]
+    });
   } catch (err) {
-    console.error(err);
+    console.error('Error al crear marca:', err);
     res.status(500).json({ error: 'Error al agregar la marca' });
   }
 });
@@ -285,6 +305,111 @@ app.delete('/marcas/:id', verificarToken, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al eliminar la marca' });
+  }
+});
+
+// =================== MARCAS - AGREGAR SI NO EXISTE ===================
+app.post('/marcas/upsert', verificarToken, async (req, res) => {
+  const { marca } = req.body;
+  
+  if (!marca || marca.trim() === '') {
+    return res.status(400).json({ error: 'El nombre de la marca es requerido' });
+  }
+
+  try {
+    // Buscar si la marca ya existe
+    const marcaExistente = await db.query('SELECT * FROM marcas WHERE marca = $1', [marca.trim()]);
+    
+    if (marcaExistente.rows.length > 0) {
+      // La marca ya existe, devolverla
+      return res.json({
+        message: 'Marca ya existente',
+        marca: marcaExistente.rows[0],
+        creada: false
+      });
+    }
+
+    // La marca no existe, crearla
+    const result = await db.query(
+      'INSERT INTO marcas (marca) VALUES ($1) RETURNING *',
+      [marca.trim()]
+    );
+    
+    res.status(201).json({
+      message: 'Marca creada exitosamente',
+      marca: result.rows[0],
+      creada: true
+    });
+  } catch (err) {
+    console.error('Error en upsert de marca:', err);
+    res.status(500).json({ error: 'Error al procesar la marca' });
+  }
+});
+
+// =================== MARCAS - AGREGAR MÚLTIPLES ===================
+app.post('/marcas/lote', verificarToken, async (req, res) => {
+  const { marcas } = req.body;
+  
+  if (!Array.isArray(marcas) || marcas.length === 0) {
+    return res.status(400).json({ error: 'Se requiere un array de marcas' });
+  }
+
+  try {
+    const client = await db.connect();
+    await client.query('BEGIN');
+
+    const resultados = {
+      creadas: [],
+      existentes: [],
+      errores: []
+    };
+
+    for (const marca of marcas) {
+      if (!marca || marca.trim() === '') {
+        resultados.errores.push({ marca, error: 'Nombre de marca vacío' });
+        continue;
+      }
+
+      try {
+        // Verificar si existe
+        const marcaExistente = await client.query('SELECT * FROM marcas WHERE marca = $1', [marca.trim()]);
+        
+        if (marcaExistente.rows.length > 0) {
+          resultados.existentes.push(marcaExistente.rows[0]);
+        } else {
+          // Crear nueva marca
+          const nuevaMarca = await client.query(
+            'INSERT INTO marcas (marca) VALUES ($1) RETURNING *',
+            [marca.trim()]
+          );
+          resultados.creadas.push(nuevaMarca.rows[0]);
+        }
+      } catch (error) {
+        resultados.errores.push({ 
+          marca, 
+          error: error.message 
+        });
+      }
+    }
+
+    await client.query('COMMIT');
+    client.release();
+
+    res.json({
+      message: `Procesadas ${marcas.length} marcas`,
+      resumen: {
+        creadas: resultados.creadas.length,
+        existentes: resultados.existentes.length,
+        errores: resultados.errores.length
+      },
+      detalles: resultados
+    });
+
+  } catch (err) {
+    await client.query('ROLLBACK');
+    client.release();
+    console.error('Error en lote de marcas:', err);
+    res.status(500).json({ error: 'Error al procesar el lote de marcas' });
   }
 });
 
