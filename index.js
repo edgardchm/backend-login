@@ -2179,8 +2179,95 @@ app.get('/modelos/estadisticas', verificarToken, async (req, res) => {
   }
 });
 
-// =================== MODELOS - CREAR ===================
-// Crear un modelo nuevo (se guarda en la próxima orden)
+// =================== MODELOS - CREAR TABLA ===================
+// Endpoint para crear la tabla de modelos (solo para desarrollo)
+app.post('/modelos/crear-tabla', verificarToken, async (req, res) => {
+  try {
+    // Crear tabla de modelos si no existe
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS modelos (
+        id SERIAL PRIMARY KEY,
+        nombre VARCHAR(255) NOT NULL,
+        marca_id INTEGER NOT NULL REFERENCES marcas(id) ON DELETE CASCADE,
+        tipo_equipo_id INTEGER REFERENCES tipos_equipo(id) ON DELETE SET NULL,
+        creado_en TIMESTAMP DEFAULT NOW(),
+        actualizado_en TIMESTAMP DEFAULT NOW(),
+        UNIQUE(nombre, marca_id)
+      )
+    `);
+    
+    res.json({ message: 'Tabla de modelos creada exitosamente' });
+  } catch (err) {
+    console.error('Error creando tabla de modelos:', err);
+    res.status(500).json({ error: 'Error al crear la tabla de modelos' });
+  }
+});
+
+// =================== MODELOS - CRUD ===================
+// Obtener todos los modelos
+app.get('/modelos-tabla', verificarToken, async (req, res) => {
+  try {
+    const { marca_id, tipo_equipo_id, busqueda, limite = 50 } = req.query;
+    
+    let whereConditions = [];
+    let queryParams = [];
+    let paramCount = 1;
+    
+    if (marca_id) {
+      whereConditions.push(`m.id = $${paramCount}`);
+      queryParams.push(marca_id);
+      paramCount++;
+    }
+    
+    if (tipo_equipo_id) {
+      whereConditions.push(`te.id = $${paramCount}`);
+      queryParams.push(tipo_equipo_id);
+      paramCount++;
+    }
+    
+    if (busqueda) {
+      whereConditions.push(`m.nombre ILIKE $${paramCount}`);
+      queryParams.push(`%${busqueda}%`);
+      paramCount++;
+    }
+    
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+    
+    const query = `
+      SELECT 
+        m.id,
+        m.nombre,
+        m.marca_id,
+        m.tipo_equipo_id,
+        m.creado_en,
+        m.actualizado_en,
+        mar.marca,
+        te.nombre as tipo_equipo
+      FROM modelos m
+      LEFT JOIN marcas mar ON m.marca_id = mar.id
+      LEFT JOIN tipos_equipo te ON m.tipo_equipo_id = te.id
+      ${whereClause}
+      ORDER BY m.nombre ASC
+      LIMIT $${paramCount}
+    `;
+    
+    queryParams.push(parseInt(limite));
+    
+    const result = await db.query(query, queryParams);
+    
+    res.json({
+      modelos: result.rows,
+      total: result.rows.length,
+      filtros: { marca_id, tipo_equipo_id, busqueda, limite: parseInt(limite) }
+    });
+    
+  } catch (err) {
+    console.error('Error obteniendo modelos:', err);
+    res.status(500).json({ error: 'Error al obtener los modelos' });
+  }
+});
+
+// Crear un modelo nuevo
 app.post('/modelos', verificarToken, async (req, res) => {
   const { marca_id, modelo, tipo_equipo_id } = req.body;
   
@@ -2205,41 +2292,141 @@ app.post('/modelos', verificarToken, async (req, res) => {
       }
     }
 
-    // Verificar si ya existe una orden con este modelo y marca
-    const modeloExistente = await db.query(`
-      SELECT os.modelo, m.marca, te.nombre as tipo_equipo
-      FROM ordenes_servicio os
-      LEFT JOIN marcas m ON os.marca_id = m.id
-      LEFT JOIN tipos_equipo te ON os.tipo_equipo_id = te.id
-      WHERE os.marca_id = $1 AND os.modelo = $2
-      LIMIT 1
-    `, [marca_id, modelo.trim()]);
+    // Verificar si el modelo ya existe para esta marca
+    const modeloExistente = await db.query(
+      'SELECT * FROM modelos WHERE marca_id = $1 AND nombre = $2',
+      [marca_id, modelo.trim()]
+    );
 
     if (modeloExistente.rows.length > 0) {
-      return res.json({
-        message: 'El modelo ya existe en el sistema',
-        modelo: modeloExistente.rows[0],
-        existe: true
+      return res.status(409).json({
+        error: 'El modelo ya existe para esta marca',
+        modelo: modeloExistente.rows[0]
       });
     }
 
-    // El modelo no existe, devolver información para que se use en la próxima orden
-    res.json({
-      message: 'Modelo preparado para agregar en la próxima orden',
-      modelo: {
-        marca_id: parseInt(marca_id),
-        marca: marcaCheck.rows[0].marca,
-        modelo: modelo.trim(),
-        tipo_equipo_id: tipo_equipo_id ? parseInt(tipo_equipo_id) : null,
-        tipo_equipo: tipo_equipo_id ? (await db.query('SELECT nombre FROM tipos_equipo WHERE id = $1', [tipo_equipo_id])).rows[0]?.nombre : null
-      },
-      existe: false,
-      instrucciones: 'Use este modelo al crear una nueva orden de servicio'
+    // Crear el nuevo modelo
+    const result = await db.query(`
+      INSERT INTO modelos (nombre, marca_id, tipo_equipo_id) 
+      VALUES ($1, $2, $3) 
+      RETURNING *
+    `, [modelo.trim(), marca_id, tipo_equipo_id]);
+
+    // Obtener el modelo completo con información de marca y tipo
+    const modeloCompleto = await db.query(`
+      SELECT 
+        m.id,
+        m.nombre,
+        m.marca_id,
+        m.tipo_equipo_id,
+        m.creado_en,
+        m.actualizado_en,
+        mar.marca,
+        te.nombre as tipo_equipo
+      FROM modelos m
+      LEFT JOIN marcas mar ON m.marca_id = mar.id
+      LEFT JOIN tipos_equipo te ON m.tipo_equipo_id = te.id
+      WHERE m.id = $1
+    `, [result.rows[0].id]);
+
+    res.status(201).json({
+      message: 'Modelo creado exitosamente',
+      modelo: modeloCompleto.rows[0]
     });
 
   } catch (err) {
-    console.error('Error procesando modelo:', err);
-    res.status(500).json({ error: 'Error al procesar el modelo' });
+    console.error('Error creando modelo:', err);
+    if (err.code === '23505') { // Unique constraint violation
+      res.status(409).json({ error: 'El modelo ya existe para esta marca' });
+    } else {
+      res.status(500).json({ error: 'Error al crear el modelo' });
+    }
+  }
+});
+
+// Obtener modelos por marca
+app.get('/modelos/marca/:marca_id', verificarToken, async (req, res) => {
+  try {
+    const { marca_id } = req.params;
+    const { limite = 20 } = req.query;
+    
+    const result = await db.query(`
+      SELECT 
+        m.id,
+        m.nombre as modelo,
+        m.marca_id,
+        m.tipo_equipo_id,
+        m.creado_en,
+        m.actualizado_en,
+        mar.marca,
+        te.nombre as tipo_equipo
+      FROM modelos m
+      LEFT JOIN marcas mar ON m.marca_id = mar.id
+      LEFT JOIN tipos_equipo te ON m.tipo_equipo_id = te.id
+      WHERE m.marca_id = $1
+      ORDER BY m.nombre ASC
+      LIMIT $2
+    `, [marca_id, parseInt(limite)]);
+    
+    res.json({
+      marca_id: parseInt(marca_id),
+      modelos: result.rows,
+      total: result.rows.length
+    });
+    
+  } catch (err) {
+    console.error('Error obteniendo modelos por marca:', err);
+    res.status(500).json({ error: 'Error al obtener los modelos de la marca' });
+  }
+});
+
+// Actualizar modelo
+app.put('/modelos/:id', verificarToken, async (req, res) => {
+  const { id } = req.params;
+  const { nombre, tipo_equipo_id } = req.body;
+  
+  try {
+    const result = await db.query(`
+      UPDATE modelos 
+      SET nombre = COALESCE($1, nombre), 
+          tipo_equipo_id = COALESCE($2, tipo_equipo_id),
+          actualizado_en = NOW()
+      WHERE id = $3 
+      RETURNING *
+    `, [nombre, tipo_equipo_id, id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Modelo no encontrado' });
+    }
+    
+    res.json({
+      message: 'Modelo actualizado exitosamente',
+      modelo: result.rows[0]
+    });
+  } catch (err) {
+    console.error('Error actualizando modelo:', err);
+    res.status(500).json({ error: 'Error al actualizar el modelo' });
+  }
+});
+
+// Eliminar modelo
+app.delete('/modelos/:id', verificarToken, async (req, res) => {
+  const { id } = req.params;
+  
+  try {
+    const result = await db.query('DELETE FROM modelos WHERE id = $1 RETURNING *', [id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Modelo no encontrado' });
+    }
+    
+    res.json({
+      message: 'Modelo eliminado exitosamente',
+      modelo: result.rows[0]
+    });
+  } catch (err) {
+    console.error('Error eliminando modelo:', err);
+    res.status(500).json({ error: 'Error al eliminar el modelo' });
   }
 });
 
