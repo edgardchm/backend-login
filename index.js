@@ -2179,6 +2179,70 @@ app.get('/modelos/estadisticas', verificarToken, async (req, res) => {
   }
 });
 
+// =================== MODELOS - CREAR ===================
+// Crear un modelo nuevo (se guarda en la próxima orden)
+app.post('/modelos', verificarToken, async (req, res) => {
+  const { marca_id, modelo, tipo_equipo_id } = req.body;
+  
+  if (!marca_id || !modelo || modelo.trim() === '') {
+    return res.status(400).json({ 
+      error: 'Se requieren los campos marca_id y modelo' 
+    });
+  }
+
+  try {
+    // Verificar que la marca existe
+    const marcaCheck = await db.query('SELECT id, marca FROM marcas WHERE id = $1', [marca_id]);
+    if (marcaCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Marca no encontrada' });
+    }
+
+    // Verificar que el tipo de equipo existe (si se proporciona)
+    if (tipo_equipo_id) {
+      const tipoCheck = await db.query('SELECT id, nombre FROM tipos_equipo WHERE id = $1', [tipo_equipo_id]);
+      if (tipoCheck.rows.length === 0) {
+        return res.status(404).json({ error: 'Tipo de equipo no encontrado' });
+      }
+    }
+
+    // Verificar si ya existe una orden con este modelo y marca
+    const modeloExistente = await db.query(`
+      SELECT os.modelo, m.marca, te.nombre as tipo_equipo
+      FROM ordenes_servicio os
+      LEFT JOIN marcas m ON os.marca_id = m.id
+      LEFT JOIN tipos_equipo te ON os.tipo_equipo_id = te.id
+      WHERE os.marca_id = $1 AND os.modelo = $2
+      LIMIT 1
+    `, [marca_id, modelo.trim()]);
+
+    if (modeloExistente.rows.length > 0) {
+      return res.json({
+        message: 'El modelo ya existe en el sistema',
+        modelo: modeloExistente.rows[0],
+        existe: true
+      });
+    }
+
+    // El modelo no existe, devolver información para que se use en la próxima orden
+    res.json({
+      message: 'Modelo preparado para agregar en la próxima orden',
+      modelo: {
+        marca_id: parseInt(marca_id),
+        marca: marcaCheck.rows[0].marca,
+        modelo: modelo.trim(),
+        tipo_equipo_id: tipo_equipo_id ? parseInt(tipo_equipo_id) : null,
+        tipo_equipo: tipo_equipo_id ? (await db.query('SELECT nombre FROM tipos_equipo WHERE id = $1', [tipo_equipo_id])).rows[0]?.nombre : null
+      },
+      existe: false,
+      instrucciones: 'Use este modelo al crear una nueva orden de servicio'
+    });
+
+  } catch (err) {
+    console.error('Error procesando modelo:', err);
+    res.status(500).json({ error: 'Error al procesar el modelo' });
+  }
+});
+
 // =================== TIPOS DE EQUIPO ===================
 app.get('/tipos-equipo', verificarToken, async (req, res) => {
   try {
